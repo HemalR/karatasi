@@ -1,0 +1,39 @@
+# Maintainer: Hemal R <me@hemalr.com>
+pkgname=karatasi
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Floating markdown notes for Omarchy, in the spirit of Raycast Notes"
+arch=('x86_64' 'aarch64')
+url="https://github.com/HemalR/karatasi"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'hyprland')
+makedepends=('cargo' 'nodejs' 'npm')
+optdepends=('uwsm: run the background instance inside the Omarchy session scope')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  npm ci --no-audit --no-fund
+  cd src-tauri
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export CARGO_HOME="$srcdir/cargo-home"
+  npm run build
+  # `tauri build` turns on the custom-protocol feature that serves the bundled frontend.
+  npx tauri build --no-bundle
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 src-tauri/target/release/karatasi "$pkgdir/usr/bin/karatasi"
+  install -Dm755 packaging/karatasi-setup "$pkgdir/usr/bin/karatasi-setup"
+  install -Dm644 packaging/karatasi.lua "$pkgdir/usr/share/karatasi/hypr/karatasi.lua"
+  install -Dm644 packaging/karatasi.desktop "$pkgdir/usr/share/applications/karatasi.desktop"
+  install -Dm644 src-tauri/icons/128x128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/karatasi.png"
+  install -Dm644 src-tauri/icons/32x32.png "$pkgdir/usr/share/icons/hicolor/32x32/apps/karatasi.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

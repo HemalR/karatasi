@@ -1,0 +1,32 @@
+[package]
+name = "karatasi"
+version = "0.1.0"
+description = "Floating markdown notes for Omarchy"
+authors = ["Hemal"]
+edition = "2021"
+
+[lib]
+name = "karatasi_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+notify = "8"
+nucleo-matcher = "0.3"
+dirs = "6"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 1

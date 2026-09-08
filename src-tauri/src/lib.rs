@@ -1,0 +1,594 @@
+mod store;
+mod theme;
+
+use std::{
+    fs,
+    io::{Read, Write},
+    os::unix::net::{UnixListener, UnixStream},
+    path::PathBuf,
+    sync::Mutex,
+    time::Duration,
+};
+
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+
+use store::{Hit, Note, NoteMeta, Store};
+use theme::Theme;
+
+pub struct AppState {
+    store: Mutex<Store>,
+    /// Action given on the command line at launch (show, toggle, search, new, start, hide).
+    initial: String,
+    main_ready: Mutex<bool>,
+    switcher_ready: Mutex<bool>,
+    /// Label of the window Hyper N targets. Tiling the main window demotes it to a plain note
+    /// window and a fresh floating main (`main-N`) takes over the role.
+    main_label: Mutex<String>,
+    main_gen: Mutex<u32>,
+    watcher: Mutex<Option<RecommendedWatcher>>,
+}
+
+#[derive(Clone, Serialize)]
+struct Renamed {
+    from: String,
+    to: String,
+}
+
+#[derive(Clone, Serialize)]
+struct Changed {
+    id: String,
+}
+
+fn last_note_path() -> PathBuf {
+    dirs::state_dir()
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/state"))
+        .join("karatasi/last-note")
+}
+
+/// The onboarding note, written on first run so an empty notes folder is never a blank screen.
+const WELCOME: &str = include_str!("../assets/welcome.md");
+
+fn open_store() -> Store {
+    let mut store = Store::open(notes_dir());
+    if store.list().is_empty() {
+        let _ = fs::write(store.path_of("welcome-to-karatasi"), WELCOME);
+        store.reload_all();
+    }
+    store
+}
+
+fn notes_dir() -> PathBuf {
+    theme::config()
+        .notes_dir
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Notes"))
+}
+
+// ---------- commands ----------
+
+#[tauri::command]
+fn list_notes(state: State<AppState>) -> Vec<NoteMeta> {
+    state.store.lock().unwrap().list()
+}
+
+#[tauri::command]
+fn get_note(state: State<AppState>, id: String) -> Result<Note, String> {
+    state.store.lock().unwrap().get(&id).ok_or_else(|| format!("no note {id}"))
+}
+
+#[tauri::command]
+fn create_note(app: AppHandle, state: State<AppState>, title: Option<String>) -> Result<Note, String> {
+    let note = state.store.lock().unwrap().create(title.as_deref())?;
+    let _ = app.emit("notes-changed", Changed { id: note.id.clone() });
+    Ok(note)
+}
+
+#[tauri::command]
+fn save_note(app: AppHandle, state: State<AppState>, id: String, content: String) -> Result<Note, String> {
+    let note = state.store.lock().unwrap().save(&id, &content)?;
+    if note.id != id {
+        let _ = app.emit("note-renamed", Renamed { from: id, to: note.id.clone() });
+    }
+    let _ = app.emit("notes-changed", Changed { id: note.id.clone() });
+    Ok(note)
+}
+
+#[tauri::command]
+fn delete_note(app: AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
+    state.store.lock().unwrap().delete(&id)?;
+    let _ = app.emit("notes-changed", Changed { id });
+    Ok(())
+}
+
+#[tauri::command]
+fn search_notes(state: State<AppState>, query: String, limit: Option<usize>) -> Vec<Hit> {
+    state.store.lock().unwrap().search(&query, limit.unwrap_or(40))
+}
+
+/// Debug aid: with KARATASI_DEBUG=1 in the environment, dump text to $XDG_RUNTIME_DIR/karatasi-debug-<name>.txt.
+#[tauri::command]
+fn debug_dump(name: String, text: String) {
+    if std::env::var_os("KARATASI_DEBUG").is_none() {
+        return;
+    }
+    let path = dirs::runtime_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join(format!("karatasi-debug-{}.txt", store::slug(&name)));
+    let _ = fs::write(path, text);
+}
+
+#[tauri::command]
+fn get_theme() -> Theme {
+    theme::load()
+}
+
+#[tauri::command]
+fn get_notes_dir(state: State<AppState>) -> String {
+    state.store.lock().unwrap().dir.to_string_lossy().to_string()
+}
+
+#[tauri::command]
+fn get_last_note() -> Option<String> {
+    fs::read_to_string(last_note_path())
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+#[tauri::command]
+fn set_last_note(id: String) {
+    let path = last_note_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(path, id);
+}
+
+#[tauri::command]
+fn show_switcher(app: AppHandle) {
+    open_switcher(&app);
+}
+
+#[tauri::command]
+fn hide_switcher(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("switcher") {
+        let _ = w.hide();
+    }
+}
+
+#[tauri::command]
+fn hide_window(window: tauri::WebviewWindow) {
+    let _ = window.hide();
+}
+
+/// Open a note in the main editor window (used by the switcher).
+#[tauri::command]
+fn open_in_main(app: AppHandle, id: String) {
+    if let Some((main, false)) = floating_main(&app, Some(&id)) {
+        let _ = main.emit_to(main.label(), "open-note", Changed { id });
+        let _ = main.show();
+        let _ = main.set_focus();
+    }
+    hide_switcher(app);
+}
+
+/// Open a note in its own floating window.
+#[tauri::command]
+fn open_note_window(app: AppHandle, id: String) -> Result<(), String> {
+    build_note_window(&app, &id, "Karatasi")?;
+    hide_switcher(app);
+    Ok(())
+}
+
+/// Ctrl Shift N: a new note in its own window, matching the window it was pressed in. From a
+/// floating note the new window floats and pins (by window rule) and the old one is unpinned so it
+/// stays on this workspace; from a tiled note the new window tiles too.
+#[tauri::command]
+fn open_new_note_window(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    let tiled = hypr_active_is_tiled_window();
+    if !tiled {
+        hypr_dispatch("hl.dsp.window.pin({ action = \"off\" })");
+    }
+    let note = state.store.lock().unwrap().create(None)?;
+    let _ = app.emit("notes-changed", Changed { id: note.id.clone() });
+    // "Karatasi Tiled" dodges the float rule; the window retitles itself to "Karatasi - <note>" on load.
+    build_note_window(&app, &note.id, if tiled { "Karatasi Tiled" } else { "Karatasi" })
+}
+
+fn build_note_window(app: &AppHandle, id: &str, title: &str) -> Result<(), String> {
+    let label = format!("note-{}", store::slug(id));
+    if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        return Ok(());
+    }
+    let url = format!("index.html?note={}", urlencode(id));
+    WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
+        .title(title)
+        .inner_size(760.0, 560.0)
+        .min_inner_size(420.0, 300.0)
+        .decorations(false)
+        .center()
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// The frontend has painted. Windows start visible because WebKitGTK does not run a page in an
+/// unrealized window; on the first ready of each window, apply the launch action (which may hide it).
+#[tauri::command]
+fn frontend_ready(app: AppHandle, state: State<AppState>, window: tauri::WebviewWindow) {
+    match window.label() {
+        "main" => {
+            let mut done = state.main_ready.lock().unwrap();
+            if *done {
+                let _ = window.show();
+                return;
+            }
+            *done = true;
+            match state.initial.as_str() {
+                "start" | "hide" | "search" => {
+                    let _ = window.hide();
+                }
+                "new" => {
+                    show_main(&app);
+                    let _ = window.emit_to(window.label(), "new-note", ());
+                }
+                _ => show_main(&app),
+            }
+        }
+        "switcher" => {
+            let mut done = state.switcher_ready.lock().unwrap();
+            if *done {
+                return;
+            }
+            *done = true;
+            if state.initial == "search" {
+                open_switcher(&app);
+            } else {
+                let _ = window.hide();
+            }
+        }
+        _ => {}
+    }
+}
+
+fn urlencode(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
+                c.to_string()
+            } else {
+                c.to_string()
+                    .bytes()
+                    .map(|b| format!("%{b:02X}"))
+                    .collect()
+            }
+        })
+        .collect()
+}
+
+// ---------- window actions ----------
+
+fn open_switcher(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("switcher") {
+        let _ = w.center();
+        let _ = w.show();
+        let _ = w.set_focus();
+        let _ = w.emit_to(w.label(), "switcher-open", ());
+    }
+}
+
+fn main_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
+    let label = app.state::<AppState>().main_label.lock().unwrap().clone();
+    app.get_webview_window(&label)
+}
+
+/// Whether Hyprland currently has the main window tiled. Karatasi windows can only be told apart by
+/// title: the main is the one titled exactly "Karatasi", every other editor window carries its note's
+/// title. Anything unexpected (no Hyprland, no hyprctl) counts as floating.
+fn main_is_tiled() -> bool {
+    let Ok(out) = std::process::Command::new("hyprctl").args(["clients", "-j"]).output() else {
+        return false;
+    };
+    let Ok(clients) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {
+        return false;
+    };
+    clients
+        .as_array()
+        .map(|cs| cs.iter().any(|c| c["class"] == "karatasi" && c["title"] == "Karatasi" && c["floating"] == false))
+        .unwrap_or(false)
+}
+
+fn hypr_dispatch(lua: &str) {
+    let _ = std::process::Command::new("hyprctl").args(["dispatch", lua]).output();
+}
+
+/// Whether the focused Hyprland window is a tiled Karatasi window (a keystroke in Karatasi comes from the
+/// focused window). Unknown counts as floating.
+fn hypr_active_is_tiled_window() -> bool {
+    let Ok(out) = std::process::Command::new("hyprctl").args(["activewindow", "-j"]).output() else {
+        return false;
+    };
+    let Ok(c) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {
+        return false;
+    };
+    c["class"] == "karatasi" && c["floating"] == false
+}
+
+/// Spawn a fresh floating main window, opening `note` or a new note, and hand it the main role.
+fn spawn_main(app: &AppHandle, note: Option<&str>) -> tauri::Result<tauri::WebviewWindow> {
+    let state = app.state::<AppState>();
+    let n = {
+        let mut gen = state.main_gen.lock().unwrap();
+        *gen += 1;
+        *gen
+    };
+    let label = format!("main-{n}");
+    let url = match note {
+        Some(id) => format!("index.html?note={}", urlencode(id)),
+        None => "index.html?new=1".to_string(),
+    };
+    let w = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
+        .title("Karatasi")
+        .inner_size(960.0, 720.0)
+        .min_inner_size(420.0, 300.0)
+        .decorations(false)
+        .center()
+        .build()?;
+    *state.main_label.lock().unwrap() = label;
+    Ok(w)
+}
+
+/// The window Hyper N targets. A tiled main is left where it is (it becomes a plain note window)
+/// and a fresh floating main takes its place; `true` means that just happened, in which case the
+/// new window shows itself and already opens `note` (or a new note), so the caller is done.
+fn floating_main(app: &AppHandle, note: Option<&str>) -> Option<(tauri::WebviewWindow, bool)> {
+    let w = main_window(app)?;
+    if w.is_visible().unwrap_or(false) && main_is_tiled() {
+        let _ = w.emit_to(w.label(), "demoted", ());
+        if let Ok(fresh) = spawn_main(app, note) {
+            return Some((fresh, true));
+        }
+    }
+    Some((w, false))
+}
+
+fn show_main(app: &AppHandle) {
+    if let Some((w, false)) = floating_main(app, None) {
+        let _ = w.show();
+        let _ = w.set_focus();
+        let _ = w.emit_to(w.label(), "main-shown", ());
+    }
+}
+
+fn toggle_main(app: &AppHandle) {
+    if let Some((w, false)) = floating_main(app, None) {
+        let visible = w.is_visible().unwrap_or(false);
+        let focused = w.is_focused().unwrap_or(false);
+        if visible && focused {
+            let _ = w.emit_to(w.label(), "main-hiding", ());
+            let _ = w.hide();
+        } else {
+            let _ = w.show();
+            let _ = w.set_focus();
+            let _ = w.emit_to(w.label(), "main-shown", ());
+        }
+    }
+}
+
+fn handle_action(app: &AppHandle, action: &str) {
+    match action {
+        "toggle" => toggle_main(app),
+        // Super W: the focused Karatasi window decides for itself (main hides, a note window closes).
+        // Without a focused window, fall back to hiding the main and the switcher.
+        "hide" => {
+            let focused = app.webview_windows().into_values().find(|w| w.is_focused().unwrap_or(false));
+            match focused {
+                Some(w) if w.label() == "switcher" => hide_switcher(app.clone()),
+                Some(w) => {
+                    let _ = w.emit_to(w.label(), "close-request", ());
+                }
+                None => {
+                    if let Some(w) = main_window(app) {
+                        let _ = w.emit_to(w.label(), "main-hiding", ());
+                        let _ = w.hide();
+                    }
+                    hide_switcher(app.clone());
+                }
+            }
+        }
+        "search" => open_switcher(app),
+        "new" => {
+            if let Some((w, false)) = floating_main(app, None) {
+                let _ = w.show();
+                let _ = w.set_focus();
+                let _ = w.emit_to(w.label(), "new-note", ());
+            }
+        }
+        "start" => {}
+        _ => show_main(app),
+    }
+}
+
+fn action_from_args(args: &[String]) -> String {
+    args.iter()
+        .skip(1)
+        .find(|a| !a.starts_with('-'))
+        .cloned()
+        .unwrap_or_else(|| "show".to_string())
+}
+
+// ---------- single instance over a unix socket ----------
+
+fn socket_path() -> PathBuf {
+    dirs::runtime_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("karatasi.sock")
+}
+
+/// Hand the action to an already running instance. Returns false when there is none.
+fn send_to_running(action: &str) -> bool {
+    let Ok(mut stream) = UnixStream::connect(socket_path()) else { return false };
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    if stream.write_all(action.as_bytes()).is_err() {
+        return false;
+    }
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let mut ack = [0u8; 2];
+    let _ = stream.read(&mut ack);
+    true
+}
+
+fn serve_actions(app: AppHandle) -> std::io::Result<()> {
+    let path = socket_path();
+    if path.exists() && UnixStream::connect(&path).is_err() {
+        let _ = fs::remove_file(&path);
+    }
+    let listener = UnixListener::bind(&path)?;
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+            let mut buf = String::new();
+            if stream.read_to_string(&mut buf).is_err() {
+                continue;
+            }
+            let action = buf.trim().to_string();
+            let handle = app.clone();
+            // Window calls must run on the GTK main thread; run_on_main_thread queues them there.
+            let _ = app.run_on_main_thread(move || handle_action(&handle, &action));
+            let _ = stream.write_all(b"ok");
+        }
+    });
+    Ok(())
+}
+
+// ---------- memory cap ----------
+
+/// Re-exec the primary inside a transient systemd scope with a hard memory limit, so a runaway
+/// leak can only ever kill Karatasi, never the session. Returns true when the child ran in our place.
+fn relaunch_in_capped_scope(args: &[String]) -> bool {
+    if std::env::var_os("KARATASI_SCOPED").is_some() {
+        return false;
+    }
+    let Ok(exe) = std::env::current_exe() else { return false };
+    let cap = std::env::var("KARATASI_MEMORY_MAX").unwrap_or_else(|_| "1500M".to_string());
+    let status = std::process::Command::new("systemd-run")
+        .args([
+            "--user",
+            "--scope",
+            "--quiet",
+            "--collect",
+            "--slice=app-graphical.slice",
+            "--description=karatasi",
+            &format!("-pMemoryMax={cap}"),
+            "-pMemorySwapMax=0",
+            "--setenv=KARATASI_SCOPED=1",
+            "--",
+        ])
+        .arg(exe)
+        .args(args.iter().skip(1))
+        .status();
+    match status {
+        Ok(_) => true,
+        Err(e) => {
+            eprintln!("karatasi: systemd-run unavailable ({e}); running without a memory cap");
+            false
+        }
+    }
+}
+
+// ---------- file watching ----------
+
+fn start_watcher(app: AppHandle) -> notify::Result<RecommendedWatcher> {
+    let dir = notes_dir();
+    let state_dir = theme::state_dir();
+    let handle = app.clone();
+    let last_theme_emit = Mutex::new(std::time::Instant::now() - Duration::from_secs(10));
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        let Ok(event) = res else { return };
+        // Only real changes. Reads must be ignored: reacting to them re-reads the file, which is
+        // itself an event, and the loop saturates the main thread and allocates without bound.
+        let kind = &event.kind;
+        if !(kind.is_modify() || kind.is_create() || kind.is_remove()) {
+            return;
+        }
+        for path in event.paths {
+            if path.file_name().map(|n| n == "theme.name" || n == "font.name").unwrap_or(false) {
+                let mut last = last_theme_emit.lock().unwrap();
+                if last.elapsed() > Duration::from_millis(300) {
+                    *last = std::time::Instant::now();
+                    let _ = handle.emit("theme-changed", ());
+                }
+                continue;
+            }
+            let state = handle.state::<AppState>();
+            let id = state.store.lock().unwrap().reload_one(&path);
+            if let Some(id) = id {
+                let _ = handle.emit("notes-changed", Changed { id });
+            }
+        }
+    })?;
+    watcher.watch(&dir, RecursiveMode::NonRecursive)?;
+    let _ = watcher.watch(&state_dir, RecursiveMode::NonRecursive);
+    Ok(watcher)
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let args: Vec<String> = std::env::args().collect();
+    let initial = action_from_args(&args);
+    if send_to_running(&initial) {
+        return;
+    }
+    if relaunch_in_capped_scope(&args) {
+        return;
+    }
+
+    tauri::Builder::default()
+        .manage(AppState {
+            store: Mutex::new(open_store()),
+            initial,
+            main_ready: Mutex::new(false),
+            switcher_ready: Mutex::new(false),
+            main_label: Mutex::new("main".to_string()),
+            main_gen: Mutex::new(0),
+            watcher: Mutex::new(None),
+        })
+        .setup(|app| {
+            let handle = app.handle().clone();
+            if let Err(e) = serve_actions(handle.clone()) {
+                eprintln!("karatasi: could not listen on {}: {e}", socket_path().display());
+            }
+            match start_watcher(handle.clone()) {
+                Ok(w) => *app.state::<AppState>().watcher.lock().unwrap() = Some(w),
+                Err(e) => eprintln!("karatasi: file watcher unavailable: {e}"),
+            }
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            list_notes,
+            get_note,
+            create_note,
+            save_note,
+            delete_note,
+            search_notes,
+            get_theme,
+            debug_dump,
+            get_notes_dir,
+            get_last_note,
+            set_last_note,
+            show_switcher,
+            hide_switcher,
+            hide_window,
+            open_in_main,
+            open_note_window,
+            open_new_note_window,
+            frontend_ready
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running karatasi");
+}

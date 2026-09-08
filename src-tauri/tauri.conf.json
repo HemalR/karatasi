@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "karatasi",
+  "version": "0.1.0",
+  "identifier": "dev.hemalr.karatasi",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Karatasi",
+        "url": "index.html",
+        "width": 960,
+        "height": 720,
+        "minWidth": 420,
+        "minHeight": 300,
+        "decorations": false,
+        "visible": true,
+        "center": true
+      },
+      {
+        "label": "switcher",
+        "title": "Karatasi Search",
+        "url": "switcher.html",
+        "width": 680,
+        "height": 440,
+        "resizable": false,
+        "decorations": false,
+        "visible": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+  }
+}

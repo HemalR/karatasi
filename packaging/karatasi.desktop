@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Karatasi
+GenericName=Notes
+Comment=Floating markdown notes for Omarchy
+Exec=karatasi show
+Icon=karatasi
+Terminal=false
+Categories=Utility;Office;
+Keywords=notes;markdown;jot;
+StartupWMClass=karatasi

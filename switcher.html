@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Karatasi Search</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <script type="module" src="/src/switcher.ts" defer></script>
+  </head>
+  <body data-page="switcher">
+    <input id="q" type="text" placeholder="Search notes…" autocomplete="off" spellcheck="false" />
+    <ul id="results"></ul>
+    <footer id="bar">
+      <span id="status"></span>
+      <span id="hints"><kbd>⏎</kbd> open <kbd>⇧⏎</kbd> new window <kbd>Ctrl ⏎</kbd> create <kbd>Esc</kbd> close</span>
+    </footer>
+  </body>
+</html>
