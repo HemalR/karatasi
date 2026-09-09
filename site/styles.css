@@ -1184,12 +1184,26 @@ table.keys kbd + kbd {
   margin: 1.6rem 0 0.9rem;
   max-width: 34em;
 }
-.hero .cmd pre {
+.cmd pre {
   padding-right: 4.5rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.hero .cmd pre {
+  font-size: 0.84rem;
+  padding-right: 1.2rem;
+  padding-bottom: 2.6rem;
+}
+.hero .cmd button {
+  top: auto;
+  bottom: 0.6rem;
 }
 .hero .meta {
   color: var(--fg-faint);
   font-size: 0.82rem;
+}
+.hero .meta code {
+  white-space: nowrap;
 }
 .hero .meta a {
   color: var(--fg-dim);
