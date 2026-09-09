@@ -10,6 +10,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build and attach packages to (e.g. v0.1.0); empty builds main without attaching"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -34,13 +39,17 @@ jobs:
       options: --user root
     steps:
       - name: Install build dependencies
-        run: pacman -Syu --noconfirm --needed git rust nodejs npm webkit2gtk-4.1 gtk3 librsvg openssl file github-cli
+        # --disable-sandbox: pacman's Landlock download sandbox cannot be applied inside the
+        # Actions container (the aarch64 image fails on it).
+        run: pacman -Syu --noconfirm --needed --disable-sandbox git rust nodejs npm webkit2gtk-4.1 gtk3 librsvg openssl file github-cli
 
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Build the package
         env:
-          REF_NAME: ${{ github.ref_name }}
+          REF_NAME: ${{ inputs.tag || github.ref_name }}
           ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
@@ -64,10 +73,10 @@ jobs:
           ls -la dist-pkg
 
       - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           git config --global --add safe.directory "$PWD"
