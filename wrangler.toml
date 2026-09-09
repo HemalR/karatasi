@@ -1,0 +1,14 @@
+# Cloudflare Worker that serves site/ as static assets at karatasi.app.
+# Deploy with scripts/deploy-site.sh (wrangler deploy); custom_domain routes make wrangler
+# create the DNS records and certificate itself.
+name = "karatasi"
+compatibility_date = "2026-09-01"
+routes = [
+  { pattern = "karatasi.app", custom_domain = true },
+  { pattern = "www.karatasi.app", custom_domain = true },
+]
+
+[assets]
+directory = "./site"
+html_handling = "auto-trailing-slash"
+not_found_handling = "none"
