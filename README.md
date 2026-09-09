@@ -149,7 +149,7 @@ on every note load.
 - `src/switcher.ts` — search window
 - `src/styles.css` — all styling, driven by CSS variables from the theme
 - `packaging/` — PKGBUILD, desktop entry, Hyprland integration and the `karatasi-setup` script
-- `site/` — the landing page at karatasi.app, static files published by `.github/workflows/pages.yml`
+- `site/` — the landing page at karatasi.app, static files; `scripts/deploy-site.sh` publishes them to Cloudflare Pages
 
 ## Packaging
 
