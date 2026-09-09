@@ -20,7 +20,8 @@ sed -i "s/^\(  \"version\": \)\".*\"/\1\"$ver\"/" src-tauri/tauri.conf.json
 sed -i "0,/^version = \".*\"/s//version = \"$ver\"/" src-tauri/Cargo.toml
 (cd src-tauri && cargo update --workspace --offline >/dev/null) # Cargo.lock entry for karatasi
 git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
-git commit -q -m "Release v$ver"
+# Nothing to commit when the files already carry this version (e.g. the first release).
+git diff --cached --quiet || git commit -q -m "Release v$ver"
 git tag -a "v$ver" -m "Karatasi v$ver"
 git push -q origin main "v$ver"
 echo "tagged and pushed v$ver"
