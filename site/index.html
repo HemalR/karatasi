@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en" data-mode="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Karatasi — floating markdown notes for Omarchy</title>
+    <meta name="description" content="Press Super N anywhere on Omarchy and a pinned markdown note appears over whatever you are doing. Press it again and it is gone. Plain files in ~/Notes. No account, no cloud." />
+    <link rel="canonical" href="https://karatasi.app/" />
+    <meta property="og:title" content="Karatasi — Super N. Write. Super N." />
+    <meta property="og:description" content="Floating markdown notes for Omarchy. One key summons a pinned note over anything, on any workspace. Plain files, fully local." />
+    <meta property="og:url" content="https://karatasi.app/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://karatasi.app/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Caveat:wght@500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <nav class="top">
+      <div class="wrap">
+        <a class="brand" href="#">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.8" />
+            <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.8" />
+            <path d="M8 13h8M8 17h5" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+          Karatasi
+        </a>
+        <div class="themes" id="themes-nav" aria-label="Omarchy theme"><span class="label">theme</span></div><span class="tname" aria-live="polite"></span>
+        <div class="links">
+          <a href="#local">Local</a>
+          <a href="#markdown">Markdown</a>
+          <a href="#keys">Keys</a>
+          <a href="#install">Install</a>
+          <a class="gh" href="https://github.com/HemalR/karatasi">GitHub</a>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <header class="wrap hero-head">
+        <h1>Instant, lightweight, floating notes for Omarchy</h1>
+      </header>
+
+      <div class="wrap story">
+        <!-- The stage: a fake Omarchy desktop that the steps drive. -->
+        <div class="stage-wrap">
+          <div class="stage" id="stage" data-scene="0" aria-label="Animated Omarchy desktop showing Karatasi">
+            <div class="desktop">
+              <div class="bar">
+                <svg class="logo" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 3 8v8l9 5 9-5V8l-9-5z" stroke="currentColor" stroke-width="1.6"/><path d="M12 12v9M3 8l9 4 9-4" stroke="currentColor" stroke-width="1.6"/></svg>
+                <div class="wss">
+                  <span class="ws on busy" data-ws="1">1</span>
+                  <span class="ws busy" data-ws="2">2</span>
+                  <span class="ws" data-ws="3">3</span>
+                </div>
+                <div class="right">
+                  <span class="clock" id="clock">10:42</span>
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="19.5" r="1.3" fill="currentColor"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8h2a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4M12 8h2M12 12h2M12 16h2M16 6v12M20 6v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2" y="7" width="18" height="10" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M22 10v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="4" y="9" width="12" height="6" fill="currentColor"/></svg>
+                  <span>82%</span>
+                </div>
+              </div>
+
+              <div class="wins" id="wins">
+                <div class="workspace" data-ws="1">
+                  <div class="win term" id="w-term">
+                    <div class="body"><span class="dir">~/Projects/karatasi</span> <span class="branch">main</span>
+<span class="prompt">❯</span> cargo build --release
+<span class="out">   Compiling karatasi v0.1.0
+    Finished release [optimized] 41.2s</span>
+<span class="dir">~/Projects/karatasi</span> <span class="branch">main</span>
+<span class="prompt">❯</span> karatasi toggle
+<span class="dir">~/Projects/karatasi</span> <span class="branch">main</span>
+<span class="prompt">❯</span> <span class="cursor"></span></div>
+                  </div>
+                  <div class="win browser" id="w-browser">
+                    <div class="chrome"><span class="dots"><i></i><i></i><i></i></span><span class="url">wiki.hypr.land/Configuring/Window-Rules</span></div>
+                    <div class="body page">
+                      <div class="crumb">Hyprland Wiki › Configuring › Window rules</div>
+                      <h4>Window rules</h4>
+                      <p>Window rules let you apply settings to windows that match a set of criteria: class, title, floating state, workspace and so on.</p>
+                      <p><code>float</code>, <code>pin</code>, <code>center</code> and <code>size</code> are static rules. They are evaluated once, when the window opens.</p>
+                      <p>A pinned window stays visible on every workspace of its monitor. Only floating windows can be pinned.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="workspace right" data-ws="2">
+                  <div class="win nvim" id="w-nvim">
+                    <div class="body"><span class="ln">40</span><span><span class="cm">// A second invocation forwards the action over the socket.</span></span><span class="ln">41</span><span><span class="kw">fn</span> <span class="fn">forward</span>(action: &amp;<span class="ty">str</span>) -&gt; <span class="ty">io::Result</span>&lt;()&gt; {</span><span class="ln">42</span><span>    <span class="kw">let</span> <span class="kw">mut</span> sock = <span class="ty">UnixStream</span>::connect(socket_path())?;</span><span class="ln">43</span><span>    sock.write_all(action.as_bytes())?;</span><span class="ln">44</span><span>    <span class="ty">Ok</span>(())</span><span class="ln">45</span><span>}</span><span class="ln">46</span><span></span><span class="ln">47</span><span><span class="kw">pub fn</span> <span class="fn">toggle</span>(app: &amp;<span class="ty">AppHandle</span>) {</span><span class="ln">48</span><span>    <span class="kw">match</span> main_window(app) {</span><span class="ln">49</span><span>        <span class="ty">Some</span>(w) <span class="kw">if</span> w.is_visible() =&gt; hide(app),</span><span class="ln">50</span><span>        _ =&gt; show(app),</span><span class="ln">51</span><span>    }</span><span class="ln">52</span><span>}</span></div>
+                    <div class="status"><span class="mode">NORMAL</span><span>src-tauri/src/lib.rs</span><span style="margin-left:auto">47:8</span></div>
+                  </div>
+                  <div class="win term" id="w-term2">
+                    <div class="body"><span class="dir">~/Projects/karatasi</span> <span class="branch">main</span>
+<span class="prompt">❯</span> git log --oneline -3
+<span class="hash">31195ee</span> Add block editing commands and automate releases
+<span class="hash">f297e7f</span> Drafts, single-press delete with undo, configurable keys
+<span class="hash">a037b58</span> Karatasi: floating markdown notes for Omarchy
+<span class="dir">~/Projects/karatasi</span> <span class="branch">main</span>
+<span class="prompt">❯</span> ls ~/Notes
+<span class="out">Landing page.md  Standup.md  Welcome to Karatasi.md</span>
+<span class="dir">~/Projects/karatasi</span> <span class="branch">main</span>
+<span class="prompt">❯</span> <span class="cursor"></span></div>
+                  </div>
+                </div>
+
+                <!-- The pinned note lives outside the workspaces so it stays put while they slide. -->
+                <div class="win note hidden focus" id="note">
+                  <div class="doc" id="note-doc"></div>
+                  <div class="foot">
+                    <span id="note-status">New note</span>
+                    <span class="hints"><span><kbd>Ctrl K</kbd> search</span><span><kbd>Ctrl N</kbd> new</span><span><kbd>Ctrl ⏎</kbd> done</span><span><kbd>Ctrl ⇧ ⏎</kbd> todo</span><span><kbd>Esc</kbd> hide</span></span>
+                  </div>
+                </div>
+                <div class="win note hidden focus" id="note2">
+                  <div class="doc"><h1 class="empty" data-ph="Untitled"></h1><p class="empty" data-ph="Start writing…"><span class="caret"></span></p></div>
+                  <div class="foot">
+                    <span>New note</span>
+                    <span class="hints"><span><kbd>Ctrl K</kbd> search</span><span><kbd>Ctrl N</kbd> new</span><span><kbd>Ctrl ⏎</kbd> done</span><span><kbd>Ctrl ⇧ ⏎</kbd> todo</span><span><kbd>Esc</kbd> hide</span></span>
+                  </div>
+                </div>
+              </div>
+              <div class="keytoast" id="keytoast">Super N</div>
+            </div>
+          </div>
+          <div class="try">
+            <div class="legend-title">On this page:</div>
+            <div class="legend">
+              <span><kbd>N</kbd> = Super N</span>
+              <span><kbd>T</kbd> = Super T</span>
+              <span><kbd>1</kbd> = Super 1</span>
+              <span><kbd>2</kbd> = Super 2</span>
+            </div>
+            <div class="legend-foot">Already running Karatasi? Press the real Super N.</div>
+          </div>
+        </div>
+
+        <div class="steps" id="steps">
+          <section class="step hero active" data-scene="0">
+            <div class="punch">Super N <span class="arrow">→</span> Write</div>
+            <p class="lead">The Raycast Notes you left on your Mac, rebuilt for Omarchy. Local files, your theme, one key.</p>
+            <div class="cmd"><pre><code><span class="p">$</span> omarchy pkg aur add karatasi
+<span class="p">$</span> karatasi-setup</code></pre><button type="button" data-copy="omarchy pkg aur add karatasi &amp;&amp; karatasi-setup">copy</button></div>
+            <div class="keyrow">
+              <button class="key pulse" type="button" data-act="toggle">Super <span class="plus">+</span> N</button>
+              <span class="hint">or press <kbd>N</kbd></span>
+            </div>
+          </section>
+
+          <section class="step" data-scene="1">
+            <div class="num">01 · SUMMON</div>
+            <h2>Press Super N.</h2>
+            <p>A note, centered and pinned above everything, ready for typing. No launcher, no window to hunt for, no filename dialog. The first line becomes the title, and the title becomes the filename.</p>
+            <div class="keyrow"><button class="key" type="button" data-act="toggle">Super <span class="plus">+</span> N</button></div>
+            <div class="try-note" aria-hidden="true"><svg viewBox="0 0 90 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M84 58 C 52 64, 20 50, 14 14" /><path d="M5 24 L14 11 L26 20" /></svg><span class="hand">go on, click them</span></div>
+          </section>
+
+          <section class="step" data-scene="2">
+            <div class="num">02 · FOLLOW</div>
+            <h2>Move on. It moves with you.</h2>
+            <p>Switch workspaces and the note is still there, pinned in the same place over the new windows. One note for your whole session, not one per screen. Keep the todo list open while you work through it.</p>
+            <div class="keyrow"><button class="key" type="button" data-act="ws" data-ws="2">Super <span class="plus">+</span> 2</button><button class="key" type="button" data-act="ws" data-ws="1">Super <span class="plus">+</span> 1</button></div>
+            <div class="try-note" aria-hidden="true"><svg viewBox="0 0 90 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M84 58 C 52 64, 20 50, 14 14" /><path d="M5 24 L14 11 L26 20" /></svg><span class="hand">go on, click them</span></div>
+          </section>
+
+          <section class="step" data-scene="3">
+            <div class="num">03 · DISMISS</div>
+            <h2>Press Super N again.</h2>
+            <p>Gone. Karatasi hides instead of quitting, so the next toggle is instant and lands exactly where you left off. <kbd>Esc</kbd> and <kbd>Super W</kbd> do the same thing. The binary stays warm in the background inside a memory-capped systemd scope.</p>
+            <div class="keyrow"><button class="key" type="button" data-act="toggle">Super <span class="plus">+</span> N</button></div>
+            <div class="try-note" aria-hidden="true"><svg viewBox="0 0 90 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M84 58 C 52 64, 20 50, 14 14" /><path d="M5 24 L14 11 L26 20" /></svg><span class="hand">go on, click them</span></div>
+          </section>
+
+          <section class="step" data-scene="4">
+            <div class="num">04 · TILE</div>
+            <h2>Want it to stay? Tile it.</h2>
+            <p>Super T is Omarchy's own float toggle, and Karatasi plays along. The floating note becomes an ordinary Hyprland window, tiled into this workspace like everything else. It stops following you and lives here. Super T again floats and pins it.</p>
+            <div class="keyrow"><button class="key" type="button" data-act="tile">Super <span class="plus">+</span> T</button></div>
+            <div class="try-note" aria-hidden="true"><svg viewBox="0 0 90 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M84 58 C 52 64, 20 50, 14 14" /><path d="M5 24 L14 11 L26 20" /></svg><span class="hand">go on, click them</span></div>
+          </section>
+
+          <section class="step" data-scene="5">
+            <div class="num">05 · AGAIN</div>
+            <h2>Super N still works.</h2>
+            <p>The tiled note stays where it is. Super N gives you a fresh floating note on top, empty and pinned. <kbd>Ctrl Shift N</kbd> opens another window that matches the one you're in: floating from a floater, tiled from a tile.</p>
+            <div class="keyrow"><button class="key" type="button" data-act="toggle">Super <span class="plus">+</span> N</button></div>
+            <div class="try-note" aria-hidden="true"><svg viewBox="0 0 90 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M84 58 C 52 64, 20 50, 14 14" /><path d="M5 24 L14 11 L26 20" /></svg><span class="hand">go on, click them</span></div>
+          </section>
+
+          <section class="step" data-scene="6">
+            <div class="num">06 · BELONG</div>
+            <h2>It wears your theme.</h2>
+            <p>Colors come from the active Omarchy theme and follow it live. Change the theme and the note changes with it. So does this page.</p>
+            <div class="keyrow"><div class="themes big" id="themes-step"></div><span class="tname big"></span></div>
+            <p class="hint" style="margin-top:0.9rem">Font and size follow Omarchy too, or set your own in <code>config.toml</code>.</p>
+          </section>
+        </div>
+      </div>
+
+      <section class="band" id="local">
+        <div class="wrap">
+          <div class="head">
+            <div class="eyebrow">Fully local</div>
+            <h2>Nothing leaves your machine.</h2>
+            <p class="lead">There is no account to create, no cloud to sync to and no service that can go away. Karatasi is one binary that talks to Hyprland and writes markdown files to a folder.</p>
+          </div>
+          <div class="grid2">
+            <div class="grid4 zeros">
+              <div class="card"><div class="big">0</div><h3>Accounts</h3><p>No sign-up, no login, no free tier. Install it and press the key.</p></div>
+              <div class="card"><div class="big">0</div><h3>Servers</h3><p>No sync backend and no API. Sync <code>~/Notes</code> with whatever you already trust, or don't.</p></div>
+              <div class="card"><div class="big">0</div><h3>Telemetry</h3><p>The only things Karatasi connects to are Hyprland's socket and your disk.</p></div>
+              <div class="card"><div class="big">.md</div><h3>Files</h3><p>Grep them. Open them in Neovim. Put them in git. They were never anything else.</p></div>
+            </div>
+            <div class="fakewin term">
+              <div class="title"><span class="dots"><i></i><i></i><i></i></span>~/Notes</div>
+              <pre><span class="prompt">❯</span> ls ~/Notes
+<span class="out">Landing page.md  Standup.md  Welcome to Karatasi.md</span>
+
+<span class="prompt">❯</span> rg -l "karatasi.app" ~/Notes
+<span class="out">/home/hr/Notes/Landing page.md</span>
+
+<span class="prompt">❯</span> head -4 ~/Notes/Standup.md
+<span class="out"># Standup
+
+- [x] Landing page copy
+- [ ] DNS for <span class="hl">karatasi.app</span></span>
+
+<span class="prompt">❯</span> <span class="cursor"></span></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" id="markdown">
+        <div class="wrap">
+          <div class="head">
+            <div class="eyebrow">Markdown</div>
+            <h2>It's just markdown.</h2>
+            <p class="lead">Type <code>-</code> for a bullet, <code>[]</code> for a todo, <code>#</code> for a heading and <code>---</code> for a divider. Bold and code render as you type. This is the note Karatasi writes on first launch. It's a file like any other, so here it is twice: as you see it, and as it sits on disk.</p>
+            <div class="shortcuts">
+              <span><code>- </code>bullet</span>
+              <span><code>1. </code>numbered</span>
+              <span><code>[] </code>todo</span>
+              <span><code># </code>heading</span>
+              <span><code>---</code>divider</span>
+              <span><code>**bold**</code></span>
+              <span><code>`code`</code></span>
+              <span><kbd>Ctrl ⏎</kbd> done</span>
+              <span><kbd>Ctrl ↑↓</kbd> move</span>
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="fakewin">
+              <div class="title"><span class="dots"><i></i><i></i><i></i></span>Karatasi</div>
+              <div class="welcome">
+                <h1>Welcome to Karatasi</h1>
+                <p>Floating notes for Omarchy. Karatasi is Swahili for paper: somewhere to jot things down. Every note is a plain markdown file in <code>~/Notes</code>, and this one is too, so edit it or delete it.</p>
+                <h2>Keys</h2>
+                <ul>
+                  <li><strong>Super N</strong> show or hide the notes window, from anywhere</li>
+                  <li><strong>Ctrl K</strong> search every note</li>
+                  <li><strong>Ctrl N</strong> new note</li>
+                  <li><strong>Ctrl Shift N</strong> new note in its own window</li>
+                  <li><strong>Ctrl Enter</strong> finish the line: tick a todo, strike through anything else; again to reopen it</li>
+                  <li><strong>Ctrl Shift Enter</strong> turn the line into a todo, or back</li>
+                  <li><strong>Ctrl Shift K</strong> delete the line or list item</li>
+                  <li><strong>Ctrl ↑</strong> and <strong>Ctrl ↓</strong> move the line or list item up and down</li>
+                  <li><strong>Ctrl [</strong> and <strong>Ctrl ]</strong> previous and next note</li>
+                  <li><strong>Ctrl Shift Backspace</strong> delete the note (it goes to the system trash; click the toast to undo)</li>
+                  <li><strong>Esc</strong> or <strong>Super W</strong> hide the window</li>
+                  <li><strong>Super T</strong> tile the window, <strong>Super T</strong> again to float it</li>
+                </ul>
+                <p>Every key above except Super N and Super T can be changed under <code>[keys]</code> in <code>~/.config/karatasi/config.toml</code>, for example <code>delete = "Ctrl+D"</code>; the README lists the names. To toggle notes with a different key, put a line like this above the <code>dofile("/usr/share/karatasi/hypr/karatasi.lua")</code> line in <code>~/.config/hypr/hyprland.lua</code>, then reload Hyprland:</p>
+                <pre><code>karatasi_toggle_key = "SUPER + ALT + N"</code></pre>
+                <h2>Writing</h2>
+                <p>Type <code>-</code> for a bullet, <code>1.</code> for a numbered list, <code>[]</code> for a todo, <code>#</code> for a heading and <code>---</code> for a divider. <code>**bold**</code> and <code>`code`</code> work as you type.</p>
+                <ul class="tasks">
+                  <li><input type="checkbox" aria-label="Try ticking this" /><span>Try ticking this</span></li>
+                  <li><input type="checkbox" checked aria-label="Already done" /><span>Already done</span></li>
+                </ul>
+                <hr />
+                <p>The first line is always the title, and the file is named after it.</p>
+                <h2>Windows</h2>
+                <p>The main window floats, stays pinned above everything and follows you across workspaces. Tile it with Super T when you want it to live on one workspace instead. Super N then gives you a fresh floating note and leaves the tiled one alone. Ctrl Shift N opens a new note that matches the window you are in: floating and pinned, or tiled.</p>
+                <h2>Search</h2>
+                <p>Ctrl K searches titles and contents. Enter opens the note here, Shift Enter opens it in its own window, and Ctrl Enter creates a note titled with what you typed.</p>
+              </div>
+              <div class="foot"><span>Saved · just now</span><span><kbd>Ctrl K</kbd> search <kbd>Ctrl N</kbd> new <kbd>Ctrl ⏎</kbd> done <kbd>Esc</kbd> hide</span></div>
+            </div>
+            <div class="fakewin term raw">
+              <div class="title"><span class="dots"><i></i><i></i><i></i></span>~/Notes/Welcome to Karatasi.md</div>
+              <pre id="raw-md"></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" id="keys">
+        <div class="wrap">
+          <div class="head">
+            <div class="eyebrow">Keys</div>
+            <h2>Keyboard native. Launch with Super + N and go from there.</h2>
+            <p class="lead">All key bindings are configurable in <code>~/.config/karatasi/config.toml</code>, by hand or via your agent. Edits apply live. Super N and Super W are Hyprland bindings set in one Lua line; Super T is Omarchy's own.</p>
+          </div>
+          <div class="grid2">
+            <table class="keys">
+              <thead><tr><th>Key</th><th>Action</th></tr></thead>
+              <tbody>
+                <tr><td><kbd>Super N</kbd></td><td>Show or hide the notes window <span class="where">anywhere</span></td></tr>
+                <tr><td><kbd>Super W</kbd></td><td>Hide the main window, close any other <span class="where">anywhere</span></td></tr>
+                <tr><td><kbd>Super T</kbd></td><td>Tile the window, or float it again <span class="where">Omarchy's binding</span></td></tr>
+                <tr><td><kbd>Ctrl K</kbd> <kbd>Ctrl P</kbd></td><td>Search every note</td></tr>
+                <tr><td><kbd>Ctrl N</kbd></td><td>New note</td></tr>
+                <tr><td><kbd>Ctrl Shift N</kbd></td><td>New note in its own window</td></tr>
+                <tr><td><kbd>Ctrl Enter</kbd></td><td>Finish the line: tick a todo, strike anything else; again to reopen</td></tr>
+                <tr><td><kbd>Ctrl Shift Enter</kbd></td><td>Turn the line into a todo, or back</td></tr>
+                <tr><td><kbd>Ctrl Shift K</kbd></td><td>Delete the line or list item</td></tr>
+                <tr><td><kbd>Ctrl ↑</kbd> <kbd>Ctrl ↓</kbd></td><td>Move the line or list item up or down</td></tr>
+                <tr><td><kbd>Ctrl [</kbd> <kbd>Ctrl ]</kbd></td><td>Previous or next note</td></tr>
+                <tr><td><kbd>Ctrl Shift Backspace</kbd></td><td>Delete the note (system trash; toast to undo)</td></tr>
+                <tr><td><kbd>Esc</kbd></td><td>Hide the main window, close any other</td></tr>
+              </tbody>
+            </table>
+            <div>
+              <table class="keys">
+                <thead><tr><th>In search</th><th>Action</th></tr></thead>
+                <tbody>
+                  <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Ctrl J</kbd> <kbd>Ctrl K</kbd></td><td>Move selection</td></tr>
+                  <tr><td><kbd>Enter</kbd></td><td>Open in the main window</td></tr>
+                  <tr><td><kbd>Shift Enter</kbd></td><td>Open in a new window</td></tr>
+                  <tr><td><kbd>Ctrl Enter</kbd></td><td>Create a note titled with the query</td></tr>
+                </tbody>
+              </table>
+              <p class="dim" style="margin-top:1.5rem;font-size:0.9rem">Search matches titles and contents, fuzzily. Ctrl K from any note; type, Enter, keep going.</p>
+              <pre style="margin-top:1.5rem"><code><span class="c"># ~/.config/karatasi/config.toml</span>
+notes_dir = <span class="s">"~/Notes"</span>
+font_size = 16
+
+[keys]
+search = [<span class="s">"Ctrl+K"</span>, <span class="s">"Ctrl+P"</span>]
+done   = <span class="s">"Ctrl+Enter"</span>
+delete = <span class="s">"Ctrl+D"</span>  <span class="c"># any chord you like</span></code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" id="install">
+        <div class="wrap">
+          <div class="head">
+            <div class="eyebrow">Install</div>
+            <h2>Two commands. Then Super N.</h2>
+            <p class="lead">Karatasi is an AUR package and a single Tauri 2 binary. The setup script wires it into Hyprland and starts the background instance so the first toggle is already instant.</p>
+          </div>
+          <div class="grid2">
+            <div class="steps-list">
+              <div>
+                <div>
+                  <h3>Install the package</h3>
+                  <p>Through Omarchy's package helper, which handles the AUR for you.</p>
+                  <div class="cmd"><pre><code><span class="p">$</span> omarchy pkg aur add karatasi</code></pre><button type="button" data-copy="omarchy pkg aur add karatasi">copy</button></div>
+                </div>
+              </div>
+              <div>
+                <div>
+                  <h3>Wire it into Hyprland</h3>
+                  <p>Adds one <code>dofile</code> line to <code>~/.config/hypr/hyprland.lua</code> that loads the bindings and window rules, reloads Hyprland and starts Karatasi hidden. <code>karatasi-setup --remove</code> undoes it.</p>
+                  <div class="cmd"><pre><code><span class="p">$</span> karatasi-setup</code></pre><button type="button" data-copy="karatasi-setup">copy</button></div>
+                </div>
+              </div>
+              <div>
+                <div>
+                  <h3>Press Super N</h3>
+                  <p>The welcome note above is waiting. Everything after that is yours.</p>
+                </div>
+              </div>
+            </div>
+            <div>
+              <h3 style="margin-bottom:0.6rem">Change the keys</h3>
+              <p class="dim" style="font-size:0.92rem;margin-bottom:0.8rem">Set any of these above the <code>dofile</code> line. Super N is unused by stock Omarchy; Hyper N is a popular alternative on keyboards with a Hyper key.</p>
+              <pre><code><span class="c">-- ~/.config/hypr/hyprland.lua</span>
+karatasi_toggle_key = <span class="s">"SUPER + CTRL + ALT + SHIFT + N"</span>
+karatasi_close_key  = <span class="s">"SUPER + W"</span>  <span class="c">-- false to leave Omarchy's alone</span>
+karatasi_autostart  = <span class="k">true</span>
+dofile(<span class="s">"/usr/share/karatasi/hypr/karatasi.lua"</span>)</code></pre>
+              <h3 style="margin:1.8rem 0 0.6rem">From source</h3>
+              <p class="dim" style="font-size:0.92rem">Rust and Node. <code>scripts/install.sh</code> builds the frontend and the binary and installs to <code>~/.local/bin</code>. Details in the <a href="https://github.com/HemalR/karatasi#from-source">README</a>.</p>
+              <h3 style="margin:1.8rem 0 0.6rem">Command line</h3>
+              <pre><code><span class="p">$</span> karatasi [show|toggle|hide|search|new|start]</code></pre>
+              <p class="dim" style="font-size:0.92rem;margin-top:0.6rem">A second invocation forwards the action to the running instance over a unix socket. The Hyprland binding is just <code>karatasi toggle</code>.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span>Karatasi is Swahili for paper. Built for <a href="https://omarchy.org">Omarchy</a>.</span>
+        <span><a href="https://github.com/HemalR/karatasi">GitHub</a> · <a href="https://github.com/HemalR/karatasi/blob/main/LICENSE">MIT</a> · <a href="https://aur.archlinux.org/packages/karatasi">AUR</a></span>
+      </div>
+    </footer>
+
+    <script src="welcome.js"></script>
+    <script src="main.js" defer></script>
+  </body>
+</html>

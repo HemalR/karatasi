@@ -1,5 +1,7 @@
 # Karatasi
 
+**[karatasi.app](https://karatasi.app)**
+
 Floating markdown notes for [Omarchy](https://omarchy.org), in the spirit of Raycast Notes. Karatasi
 is Swahili for paper: somewhere to jot things down. A single small Tauri 2 binary with a TipTap
 editor; every note is a plain markdown file in `~/Notes`.
@@ -147,6 +149,7 @@ on every note load.
 - `src/switcher.ts` — search window
 - `src/styles.css` — all styling, driven by CSS variables from the theme
 - `packaging/` — PKGBUILD, desktop entry, Hyprland integration and the `karatasi-setup` script
+- `site/` — the landing page at karatasi.app, static files published by `.github/workflows/pages.yml`
 
 ## Packaging
 
