@@ -144,8 +144,9 @@
           <section class="step hero active" data-scene="0">
             <div class="punch">Super N <span class="arrow">→</span> Write</div>
             <p class="lead">The Raycast Notes you left on your Mac, rebuilt for Omarchy. Local files, your theme, one key.</p>
-            <div class="cmd"><pre><code><span class="p">$</span> sudo pacman -U https://karatasi.app/karatasi.pkg.tar.zst
-<span class="p">$</span> karatasi-setup</code></pre><button type="button" data-copy="sudo pacman -U https://karatasi.app/karatasi.pkg.tar.zst &amp;&amp; karatasi-setup">copy</button></div>
+            <div class="cmd"><pre><code><span class="p">$</span> sudo pacman -U https://karatasi.app/karatasi-$(uname -m).pkg.tar.zst
+<span class="p">$</span> karatasi-setup</code></pre><button type="button" data-copy="sudo pacman -U https://karatasi.app/karatasi-$(uname -m).pkg.tar.zst &amp;&amp; karatasi-setup">copy</button></div>
+            <p class="meta">Intel and AMD or Apple Silicon, <code>uname -m</code> picks the right package.</p>
             <div class="keyrow">
               <button class="key pulse" type="button" data-act="toggle">Super <span class="plus">+</span> N</button>
               <span class="hint">or press <kbd>N</kbd></span>
@@ -362,8 +363,9 @@ delete = <span class="s">"Ctrl+D"</span>  <span class="c"># any chord you like</
               <div>
                 <div>
                   <h3>Install the package</h3>
-                  <p>A prebuilt x86_64 package from the latest <a href="https://github.com/HemalR/karatasi/releases/latest">GitHub release</a>; pacman resolves the dependencies. On an Apple Silicon or other aarch64 machine use <code>karatasi-aarch64.pkg.tar.zst</code> instead. Prefer to build it yourself? Clone the repo and run <code>makepkg -si</code> in <code>packaging/</code>.</p>
-                  <div class="cmd"><pre><code><span class="p">$</span> sudo pacman -U https://karatasi.app/karatasi.pkg.tar.zst</code></pre><button type="button" data-copy="sudo pacman -U https://karatasi.app/karatasi.pkg.tar.zst">copy</button></div>
+                  <p>A prebuilt package from the latest <a href="https://github.com/HemalR/karatasi/releases/latest">GitHub release</a> for both architectures Omarchy runs on; pacman resolves the dependencies. <code>uname -m</code> expands to <code>x86_64</code> on Intel and AMD machines and <code>aarch64</code> on Apple Silicon, so the same line works everywhere.</p>
+                  <div class="cmd"><pre><code><span class="p">$</span> sudo pacman -U https://karatasi.app/karatasi-$(uname -m).pkg.tar.zst</code></pre><button type="button" data-copy="sudo pacman -U https://karatasi.app/karatasi-$(uname -m).pkg.tar.zst">copy</button></div>
+                  <p class="dim" style="margin-top:0.7rem;font-size:0.85rem">Or spell it out: <code>karatasi-x86_64.pkg.tar.zst</code> for Intel and AMD, <code>karatasi-aarch64.pkg.tar.zst</code> for Apple Silicon. Prefer to build it yourself? Clone the repo and run <code>makepkg -si</code> in <code>packaging/</code>.</p>
                 </div>
               </div>
               <div>

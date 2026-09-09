@@ -12,14 +12,14 @@ again and it is gone. Everything is a `.md` file, so your notes are grep-able, s
 ## Install on Omarchy
 
 ```sh
-sudo pacman -U https://karatasi.app/karatasi.pkg.tar.zst
+sudo pacman -U https://karatasi.app/karatasi-$(uname -m).pkg.tar.zst
 karatasi-setup
 ```
 
-The URL redirects to the prebuilt `x86_64` package attached to the [latest GitHub
-release](https://github.com/HemalR/karatasi/releases/latest); pacman resolves the dependencies
-(`webkit2gtk-4.1`, `gtk3`). On aarch64 (Apple Silicon) use
-`https://karatasi.app/karatasi-aarch64.pkg.tar.zst`. To build the package yourself instead, run
+`uname -m` picks `karatasi-x86_64.pkg.tar.zst` on Intel and AMD machines and
+`karatasi-aarch64.pkg.tar.zst` on Apple Silicon; both URLs redirect to the prebuilt package attached
+to the [latest GitHub release](https://github.com/HemalR/karatasi/releases/latest), and pacman
+resolves the dependencies (`webkit2gtk-4.1`, `gtk3`). To build the package yourself instead, run
 `makepkg -si` in `packaging/`.
 
 `karatasi-setup` adds one line to `~/.config/hypr/hyprland.lua` that loads the packaged bindings
