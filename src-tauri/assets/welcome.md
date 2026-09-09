@@ -8,7 +8,10 @@ Floating notes for Omarchy. Karatasi is Swahili for paper: somewhere to jot thin
 - **Ctrl K** search every note
 - **Ctrl N** new note
 - **Ctrl Shift N** new note in its own window
-- **Ctrl Enter** turn the line into a todo, or tick it
+- **Ctrl Enter** finish the line: tick a todo, strike through anything else; again to reopen it
+- **Ctrl Shift Enter** turn the line into a todo, or back
+- **Ctrl Shift K** delete the line or list item
+- **Ctrl ↑** and **Ctrl ↓** move the line or list item up and down
 - **Ctrl \[** and **Ctrl \]** previous and next note
 - **Ctrl Shift Backspace** delete the note (it goes to the system trash; click the toast to undo)
 - **Esc** or **Super W** hide the window

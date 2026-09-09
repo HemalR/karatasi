@@ -155,9 +155,25 @@ export class Keymap {
     return c ? chordLabel(c) : "";
   }
 
-  /// Fill every `<kbd data-key="name">` inside `root` with its chord label.
+  /// Two actions on one key cap, e.g. "Ctrl ↑ ↓" when they share modifiers, else "Ctrl ↑ / Alt ↓".
+  labelPair(a: string, b: string): string {
+    const ca = this.chords.get(a)?.[0];
+    const cb = this.chords.get(b)?.[0];
+    if (!ca || !cb) return this.label(a) || this.label(b);
+    const sameMods = ca.ctrl === cb.ctrl && ca.shift === cb.shift && ca.alt === cb.alt && ca.meta === cb.meta;
+    if (!sameMods) return `${chordLabel(ca)} / ${chordLabel(cb)}`;
+    const la = chordLabel(ca);
+    const lb = chordLabel(cb);
+    return `${la} ${lb.slice(lb.lastIndexOf(" ") + 1)}`;
+  }
+
+  /// Fill every `<kbd data-key="name">` inside `root` with its chord label; `data-key-pair` adds a
+  /// second action on the same cap.
   renderHints(root: ParentNode): void {
-    for (const el of root.querySelectorAll<HTMLElement>("kbd[data-key]")) el.textContent = this.label(el.dataset.key!);
+    for (const el of root.querySelectorAll<HTMLElement>("kbd[data-key]")) {
+      const pair = el.dataset.keyPair;
+      el.textContent = pair ? this.labelPair(el.dataset.key!, pair) : this.label(el.dataset.key!);
+    }
   }
 }
 

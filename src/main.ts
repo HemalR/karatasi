@@ -4,6 +4,9 @@ import Document from "@tiptap/extension-document";
 import { Markdown } from "@tiptap/markdown";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Placeholder } from "@tiptap/extensions";
+import Strike from "@tiptap/extension-strike";
+import { TextSelection } from "@tiptap/pm/state";
+import type { Node as PMNode } from "@tiptap/pm/model";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -36,7 +39,11 @@ const DEFAULT_KEYS: Record<string, string[]> = {
   search: ["Ctrl+K", "Ctrl+P"],
   new: ["Ctrl+N"],
   new_window: ["Ctrl+Shift+N"],
-  todo: ["Ctrl+Enter"],
+  done: ["Ctrl+Enter"],
+  todo: ["Ctrl+Shift+Enter"],
+  delete_block: ["Ctrl+Shift+K"],
+  move_up: ["Ctrl+Up"],
+  move_down: ["Ctrl+Down"],
   prev: ["Ctrl+["],
   next: ["Ctrl+]"],
   delete: ["Ctrl+Shift+Backspace"],
@@ -47,7 +54,22 @@ let keys = new Keymap(DEFAULT_KEYS);
 function applySettings(t: Theme): void {
   keys = new Keymap(DEFAULT_KEYS, t.keys);
   keys.renderHints(document);
+  fitHints();
 }
+
+// The bar cannot wrap, so when the window is narrow, hints leave in `data-drop` order (lowest
+// number first) until the rest fit next to the status text.
+const hintsEl = document.getElementById("hints")!;
+function fitHints(): void {
+  const hints = [...hintsEl.querySelectorAll<HTMLElement>(".hint")];
+  for (const h of hints) h.hidden = false;
+  const droppable = hints.filter((h) => h.dataset.drop).sort((a, b) => Number(a.dataset.drop) - Number(b.dataset.drop));
+  for (const h of droppable) {
+    if (hintsEl.scrollWidth <= hintsEl.clientWidth) break;
+    h.hidden = true;
+  }
+}
+window.addEventListener("resize", fitHints);
 
 let current: Note | null = null;
 let dirty = false;
@@ -68,9 +90,12 @@ const editor = new Editor({
       document: false,
       heading: { levels: [1, 2, 3] },
       link: { openOnClick: false },
+      // Strike is block-level here (Ctrl Enter marks a whole line done), so drop the partial-text shortcut.
+      strike: false,
       // Keep an empty paragraph (never a heading) after the last block so the caret always has a home.
       trailingNode: { node: "paragraph", notAfter: ["paragraph"] },
     }),
+    Strike.extend({ addKeyboardShortcuts: () => ({}) }),
     TaskList,
     // The node view omits data-type, so add it ourselves to keep the CSS selectors honest.
     TaskItem.configure({ nested: true, HTMLAttributes: { "data-type": "taskItem" } }),
@@ -262,13 +287,104 @@ async function step(direction: 1 | -1): Promise<void> {
   if (next.id !== current.id) await load(next.id);
 }
 
-function toggleTodo(): void {
+// ---------- block commands ----------
+
+// Mark every line in the selection done (struck through and muted), or undo that if all of them
+// already are. Whole blocks only; the strike lands on the full text of each block.
+function toggleDone(): void {
+  const { state, view } = editor;
+  const strike = state.schema.marks.strike;
+  const { from, to } = state.selection;
+  const blocks: { start: number; end: number; done: boolean }[] = [];
+  state.doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isTextblock) return true;
+    if (node.content.size === 0) return false;
+    let done = true;
+    node.forEach((child) => {
+      if (child.isText && !strike.isInSet(child.marks)) done = false;
+    });
+    blocks.push({ start: pos + 1, end: pos + 1 + node.content.size, done });
+    return false;
+  });
+  if (blocks.length === 0) return;
+  const clear = blocks.every((b) => b.done);
+  const tr = state.tr;
+  for (const b of blocks) {
+    if (clear) tr.removeMark(b.start, b.end, strike);
+    else tr.addMark(b.start, b.end, strike.create());
+  }
+  view.dispatch(tr.scrollIntoView());
+  editor.commands.focus();
+}
+
+// The block the caret is in: the list item when inside a list, otherwise the top-level block.
+function blockAtCursor(): { node: PMNode; pos: number; depth: number } | null {
+  const $from = editor.state.selection.$from;
+  for (let depth = $from.depth; depth >= 1; depth--) {
+    const node = $from.node(depth);
+    if (node.type.name === "listItem" || node.type.name === "taskItem") return { node, pos: $from.before(depth), depth };
+  }
+  if ($from.depth < 1) return null;
+  return { node: $from.node(1), pos: $from.before(1), depth: 1 };
+}
+
+// Remove the current block (line, or list item with everything nested in it). The title stays: it
+// is emptied instead, since the document must start with a heading.
+function deleteBlock(): void {
+  const block = blockAtCursor();
+  if (!block) return;
+  const { state, view } = editor;
+  const tr = state.tr;
+  if (block.depth === 1 && block.pos === 0) {
+    tr.delete(1, 1 + block.node.content.size);
+  } else {
+    // deleteRange widens to whole nodes, so the last item takes its now-empty list with it.
+    tr.deleteRange(block.pos, block.pos + block.node.nodeSize);
+    tr.setSelection(TextSelection.near(tr.doc.resolve(Math.min(block.pos, tr.doc.content.size)), 1));
+  }
+  view.dispatch(tr.scrollIntoView());
+  editor.commands.focus();
+}
+
+// Swap the current block with its neighbour: a list item moves within its list (carrying anything
+// nested in it), a top-level block hops over whole neighbours. The title never moves, and nothing
+// moves above it or below the empty trailing line.
+function moveBlock(direction: 1 | -1): void {
+  const block = blockAtCursor();
+  if (!block) return;
+  const { state, view } = editor;
+  const $from = state.selection.$from;
+  const parent = $from.node(block.depth - 1);
+  const index = $from.index(block.depth - 1);
+  if (block.depth === 1 && index === 0) return;
+  const targetIndex = index + direction;
+  if (targetIndex < 0 || targetIndex >= parent.childCount) return;
+  if (block.depth === 1 && targetIndex === 0) return;
+  const neighbour = parent.child(targetIndex);
+  if (block.depth === 1 && direction === 1 && targetIndex === parent.childCount - 1 && neighbour.isTextblock && neighbour.content.size === 0) return;
+  const cursor = state.selection.from - block.pos;
+  const tr = state.tr;
+  tr.delete(block.pos, block.pos + block.node.nodeSize);
+  const insertAt = direction === -1 ? block.pos - neighbour.nodeSize : block.pos + neighbour.nodeSize;
+  tr.insert(insertAt, block.node);
+  tr.setSelection(TextSelection.near(tr.doc.resolve(insertAt + cursor)));
+  view.dispatch(tr.scrollIntoView());
+  editor.commands.focus();
+}
+
+// Finish the line: tick a todo, strike anything else; again to reopen either.
+function finishLine(): void {
   if (editor.isActive("taskItem")) {
     const checked = Boolean(editor.getAttributes("taskItem").checked);
     editor.chain().focus().updateAttributes("taskItem", { checked: !checked }).run();
   } else {
-    editor.chain().focus().toggleTaskList().run();
+    toggleDone();
   }
+}
+
+// Turn the line into a todo, or a todo back into a plain line.
+function toggleTodo(): void {
+  editor.chain().focus().toggleTaskList().run();
 }
 
 // ---------- status bar ----------
@@ -307,7 +423,11 @@ const ACTIONS: Record<string, () => void> = {
   search: () => void flushSave().then(() => invoke("show_switcher")),
   new: () => void newNote(),
   new_window: () => void newNoteWindow(),
+  done: finishLine,
   todo: toggleTodo,
+  delete_block: deleteBlock,
+  move_up: () => moveBlock(-1),
+  move_down: () => moveBlock(1),
   prev: () => void step(-1),
   next: () => void step(1),
 };

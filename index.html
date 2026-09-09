@@ -11,7 +11,16 @@
     <main id="editor"></main>
     <footer id="bar">
       <span id="status"></span>
-      <span id="hints"><kbd data-key="search">Ctrl K</kbd> search <kbd data-key="new">Ctrl N</kbd> new <kbd data-key="todo">Ctrl ⏎</kbd> todo <kbd data-key="delete">Ctrl ⇧ ⌫</kbd> delete <kbd data-key="hide">Esc</kbd> hide</span>
+      <!-- data-drop is the order hints disappear in when the window is too narrow (1 goes first). -->
+      <span id="hints"
+        ><span class="hint" data-drop="6"><kbd data-key="search">Ctrl K</kbd> search</span>
+        <span class="hint" data-drop="4"><kbd data-key="new">Ctrl N</kbd> new</span>
+        <span class="hint" data-drop="3"><kbd data-key="done">Ctrl ⏎</kbd> done</span>
+        <span class="hint" data-drop="2"><kbd data-key="todo">Ctrl ⇧ ⏎</kbd> todo</span>
+        <span class="hint" data-drop="1"><kbd data-key="move_up" data-key-pair="move_down">Ctrl ↑ ↓</kbd> move</span>
+        <span class="hint" data-drop="5"><kbd data-key="delete">Ctrl ⇧ ⌫</kbd> delete</span>
+        <span class="hint"><kbd data-key="hide">Esc</kbd> hide</span></span
+      >
     </footer>
   </body>
 </html>

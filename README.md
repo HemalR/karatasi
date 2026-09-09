@@ -41,7 +41,10 @@ with `dofile` (the binary has to be on Hyprland's `PATH`, or edit the paths in a
 | Editor   | Ctrl K / Ctrl P         | Search every note                             |
 | Editor   | Ctrl N                  | New note                                      |
 | Editor   | Ctrl Shift N            | New note in its own window                    |
-| Editor   | Ctrl Enter              | Turn the line into a todo, or tick it         |
+| Editor   | Ctrl Enter              | Finish the line: tick a todo, strike anything else; again to reopen |
+| Editor   | Ctrl Shift Enter        | Turn the line into a todo, or back            |
+| Editor   | Ctrl Shift K            | Delete the line or list item                  |
+| Editor   | Ctrl ↑ / Ctrl ↓         | Move the line or list item up / down          |
 | Editor   | Ctrl [ / Ctrl ]         | Previous / next note                          |
 | Editor   | Ctrl Shift Backspace    | Delete the note (system trash; toast to undo) |
 | Editor   | Esc                     | Hide (main window) or close (any other)       |
@@ -91,7 +94,11 @@ font_size = 16
 search = ["Ctrl+K", "Ctrl+P"]
 new = "Ctrl+N"
 new_window = "Ctrl+Shift+N"
-todo = "Ctrl+Enter"
+done = "Ctrl+Enter"
+todo = "Ctrl+Shift+Enter"
+delete_block = "Ctrl+Shift+K"
+move_up = "Ctrl+Up"
+move_down = "Ctrl+Down"
 prev = "Ctrl+["
 next = "Ctrl+]"
 delete = "Ctrl+Shift+Backspace"
@@ -143,10 +150,13 @@ on every note load.
 
 ## Packaging
 
-`packaging/PKGBUILD` builds from a tagged GitHub release. To publish a version: bump `version` in
-`package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`, tag `vX.Y.Z`, update
-`pkgver` and run `updpkgsums` in `packaging/`, then push the PKGBUILD and its `.SRCINFO`
-(`makepkg --printsrcinfo > .SRCINFO`) to the AUR. For iteration, `npm run tauri dev`.
+`packaging/PKGBUILD` builds from a tagged GitHub release. `scripts/release.sh X.Y.Z` cuts one: it
+bumps the version in `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json` and both
+lockfiles, commits, tags `vX.Y.Z`, pushes, then pins the PKGBUILD to the tag with a real checksum
+(`updpkgsums`), regenerates `packaging/.SRCINFO` and commits that too. Copy `PKGBUILD` and
+`.SRCINFO` into your AUR clone and push. To check the package builds the way the AUR does, run
+`makepkg -sf` in `packaging/`, or `extra-x86_64-build` from `devtools` for a clean chroot. For
+iteration, `npm run tauri dev`.
 
 ## License
 

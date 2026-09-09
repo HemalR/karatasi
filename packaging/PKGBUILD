@@ -10,8 +10,11 @@ depends=('webkit2gtk-4.1' 'gtk3' 'hyprland')
 makedepends=('cargo' 'nodejs' 'npm')
 optdepends=('uwsm: run the background instance inside the Omarchy session scope')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+# Filled in by scripts/release.sh (updpkgsums) once the tag's tarball exists.
 sha256sums=('SKIP')
 
+# Everything that needs the network happens here, so build() works in a clean chroot with
+# networking off (extra-x86_64-build).
 prepare() {
   cd "$pkgname-$pkgver"
   npm ci --no-audit --no-fund
@@ -21,10 +24,11 @@ prepare() {
 
 build() {
   cd "$pkgname-$pkgver"
-  export CARGO_HOME="$srcdir/cargo-home"
+  export RUSTUP_TOOLCHAIN=stable
   npm run build
-  # `tauri build` turns on the custom-protocol feature that serves the bundled frontend.
-  npx tauri build --no-bundle
+  # `tauri build` turns on the custom-protocol feature that serves the bundled frontend; the
+  # arguments after `--` go to cargo, and --frozen keeps it on the crates prepare() fetched.
+  npx tauri build --no-bundle -- --frozen
 }
 
 package() {

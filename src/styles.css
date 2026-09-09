@@ -35,9 +35,18 @@ body {
   cursor: default;
 }
 
+/* Selection in the accent colour, with the selected text (links included) dropping to the page
+   background so the highlight reads clearly against accent-coloured links. Omarchy's own
+   `selection` colour is too close to the background to see. */
 ::selection {
-  background: var(--selection);
-  color: var(--fg-bright);
+  background: var(--accent);
+  color: var(--bg);
+}
+.tiptap a::selection,
+.tiptap code::selection,
+.tiptap strong::selection {
+  background: var(--accent);
+  color: var(--bg);
 }
 
 ::-webkit-scrollbar {
@@ -79,14 +88,26 @@ kbd {
   background: var(--bg);
   white-space: nowrap;
 }
+#bar #status {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 16px;
+}
 #bar #status[data-warn] {
   color: var(--red);
 }
-#bar #hints kbd {
-  margin-left: 8px;
+/* Hints shrink before the status does; the overflow is what fitHints() measures. */
+#bar #hints {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
-#bar #hints kbd:first-child {
-  margin-left: 0;
+#bar #hints .hint + .hint,
+#bar #hints > kbd + kbd,
+#bar #hints > kbd:not(:first-child) {
+  margin-left: 8px;
 }
 
 /* ---------- editor ---------- */
@@ -203,7 +224,9 @@ body[data-page="editor"] #editor {
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
-.tiptap li[data-type="taskItem"][data-checked="true"] > div {
+/* Done, whether a ticked todo or a struck line (Ctrl Enter): one look for both. */
+.tiptap li[data-type="taskItem"][data-checked="true"] > div,
+.tiptap s {
   color: var(--fg-faint);
   text-decoration: line-through;
   text-decoration-color: var(--fg-faint);
