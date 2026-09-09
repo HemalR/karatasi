@@ -1,0 +1,80 @@
+# Builds pacman packages for a tagged release and attaches them to the GitHub release, so the site
+# can point at fixed URLs:
+#   sudo pacman -U https://karatasi.app/karatasi.pkg.tar.zst           # x86_64
+#   sudo pacman -U https://karatasi.app/karatasi-aarch64.pkg.tar.zst   # aarch64
+# (site/_redirects maps those to .../releases/latest/download/karatasi-<arch>.pkg.tar.zst.)
+# Tags come from scripts/release.sh.
+name: Release package
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            image: archlinux:base-devel
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            image: menci/archlinuxarm:base-devel
+    runs-on: ${{ matrix.runner }}
+    # The aarch64 build rides on a third-party Arch Linux ARM image; never let it block a release.
+    continue-on-error: ${{ matrix.arch == 'aarch64' }}
+    container:
+      image: ${{ matrix.image }}
+      options: --user root
+    steps:
+      - name: Install build dependencies
+        run: pacman -Syu --noconfirm --needed git rust nodejs npm webkit2gtk-4.1 gtk3 librsvg openssl file github-cli
+
+      - uses: actions/checkout@v4
+
+      - name: Build the package
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          # Tag vX.Y.Z -> pkgver X.Y.Z; on a manual run use the version in package.json.
+          if [[ "$REF_NAME" == v* ]]; then ver="${REF_NAME#v}"; else ver="$(node -p "require('./package.json').version")"; fi
+          git config --global --add safe.directory "$PWD"
+          # makepkg refuses to run as root; the checkout is owned by root inside the container.
+          useradd -m builder
+          install -d -o builder /build
+          # Hand makepkg the checked-out tree as the tarball it expects instead of downloading it,
+          # so the package is built from exactly what was tagged.
+          git archive --prefix="karatasi-$ver/" -o "/build/karatasi-$ver.tar.gz" HEAD
+          sed "s/^pkgver=.*/pkgver=$ver/; s/^pkgrel=.*/pkgrel=1/" packaging/PKGBUILD > /build/PKGBUILD
+          chown -R builder /build
+          # -d skips the dependency check (hyprland is a runtime dependency only; the libraries
+          # needed to compile were installed above). --skipinteg because the tarball is local.
+          su builder -c 'cd /build && PKGEXT=.pkg.tar.zst makepkg -fd --skipinteg'
+          mkdir -p dist-pkg
+          cp "/build/karatasi-$ver-1-$ARCH.pkg.tar.zst" dist-pkg/
+          cp "/build/karatasi-$ver-1-$ARCH.pkg.tar.zst" "dist-pkg/karatasi-$ARCH.pkg.tar.zst"
+          ls -la dist-pkg
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$PWD"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Karatasi $TAG" --generate-notes || true
+          gh release upload "$TAG" dist-pkg/*.pkg.tar.zst --clobber
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: karatasi-${{ matrix.arch }}
+          path: dist-pkg/*.pkg.tar.zst

@@ -15,7 +15,7 @@ for tool in updpkgsums makepkg npm cargo curl; do
 done
 
 # --- version bump -------------------------------------------------------------------------------
-npm version "$ver" --no-git-tag-version >/dev/null            # package.json + package-lock.json
+npm version "$ver" --no-git-tag-version --allow-same-version >/dev/null  # package.json + package-lock.json
 sed -i "s/^\(  \"version\": \)\".*\"/\1\"$ver\"/" src-tauri/tauri.conf.json
 sed -i "0,/^version = \".*\"/s//version = \"$ver\"/" src-tauri/Cargo.toml
 (cd src-tauri && cargo update --workspace --offline >/dev/null) # Cargo.lock entry for karatasi
@@ -40,4 +40,5 @@ git add packaging/PKGBUILD packaging/.SRCINFO
 git commit -q -m "Package v$ver"
 git push -q origin main
 echo "packaging/PKGBUILD pinned to v$ver with checksum $(grep -m1 sha256sums packaging/PKGBUILD | cut -d"'" -f2 | cut -c1-12)…"
-echo "next: copy packaging/PKGBUILD and packaging/.SRCINFO into your AUR clone, commit and push"
+echo "the Release package workflow is now building the .pkg.tar.zst for the v$ver GitHub release:"
+echo "  gh run watch"

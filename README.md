@@ -12,9 +12,15 @@ again and it is gone. Everything is a `.md` file, so your notes are grep-able, s
 ## Install on Omarchy
 
 ```sh
-omarchy pkg aur add karatasi
+sudo pacman -U https://karatasi.app/karatasi.pkg.tar.zst
 karatasi-setup
 ```
+
+The URL redirects to the prebuilt `x86_64` package attached to the [latest GitHub
+release](https://github.com/HemalR/karatasi/releases/latest); pacman resolves the dependencies
+(`webkit2gtk-4.1`, `gtk3`). On aarch64 (Apple Silicon) use
+`https://karatasi.app/karatasi-aarch64.pkg.tar.zst`. To build the package yourself instead, run
+`makepkg -si` in `packaging/`.
 
 `karatasi-setup` adds one line to `~/.config/hypr/hyprland.lua` that loads the packaged bindings
 and window rules (`/usr/share/karatasi/hypr/karatasi.lua`), reloads Hyprland and starts the
@@ -156,8 +162,12 @@ on every note load.
 `packaging/PKGBUILD` builds from a tagged GitHub release. `scripts/release.sh X.Y.Z` cuts one: it
 bumps the version in `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json` and both
 lockfiles, commits, tags `vX.Y.Z`, pushes, then pins the PKGBUILD to the tag with a real checksum
-(`updpkgsums`), regenerates `packaging/.SRCINFO` and commits that too. Copy `PKGBUILD` and
-`.SRCINFO` into your AUR clone and push. To check the package builds the way the AUR does, run
+(`updpkgsums`), regenerates `packaging/.SRCINFO` and commits that too. Pushing the tag runs
+`.github/workflows/release.yml`, which builds the package for `x86_64` and `aarch64` in Arch
+containers and attaches `karatasi-X.Y.Z-1-<arch>.pkg.tar.zst` (plus fixed-name
+`karatasi-<arch>.pkg.tar.zst` copies that the `karatasi.app/...pkg.tar.zst` URLs redirect to) to
+the GitHub release. The PKGBUILD and
+`.SRCINFO` are AUR-ready for when registrations reopen. To check the package builds locally, run
 `makepkg -sf` in `packaging/`, or `extra-x86_64-build` from `devtools` for a clean chroot. For
 iteration, `npm run tauri dev`.
 

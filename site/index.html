@@ -144,8 +144,8 @@
           <section class="step hero active" data-scene="0">
             <div class="punch">Super N <span class="arrow">→</span> Write</div>
             <p class="lead">The Raycast Notes you left on your Mac, rebuilt for Omarchy. Local files, your theme, one key.</p>
-            <div class="cmd"><pre><code><span class="p">$</span> omarchy pkg aur add karatasi
-<span class="p">$</span> karatasi-setup</code></pre><button type="button" data-copy="omarchy pkg aur add karatasi &amp;&amp; karatasi-setup">copy</button></div>
+            <div class="cmd"><pre><code><span class="p">$</span> sudo pacman -U https://karatasi.app/karatasi.pkg.tar.zst
+<span class="p">$</span> karatasi-setup</code></pre><button type="button" data-copy="sudo pacman -U https://karatasi.app/karatasi.pkg.tar.zst &amp;&amp; karatasi-setup">copy</button></div>
             <div class="keyrow">
               <button class="key pulse" type="button" data-act="toggle">Super <span class="plus">+</span> N</button>
               <span class="hint">or press <kbd>N</kbd></span>
@@ -355,15 +355,15 @@ delete = <span class="s">"Ctrl+D"</span>  <span class="c"># any chord you like</
           <div class="head">
             <div class="eyebrow">Install</div>
             <h2>Two commands. Then Super N.</h2>
-            <p class="lead">Karatasi is an AUR package and a single Tauri 2 binary. The setup script wires it into Hyprland and starts the background instance so the first toggle is already instant.</p>
+            <p class="lead">Karatasi ships as a prebuilt pacman package and a single Tauri 2 binary. The setup script wires it into Hyprland and starts the background instance so the first toggle is already instant.</p>
           </div>
           <div class="grid2">
             <div class="steps-list">
               <div>
                 <div>
                   <h3>Install the package</h3>
-                  <p>Through Omarchy's package helper, which handles the AUR for you.</p>
-                  <div class="cmd"><pre><code><span class="p">$</span> omarchy pkg aur add karatasi</code></pre><button type="button" data-copy="omarchy pkg aur add karatasi">copy</button></div>
+                  <p>A prebuilt x86_64 package from the latest <a href="https://github.com/HemalR/karatasi/releases/latest">GitHub release</a>; pacman resolves the dependencies. On an Apple Silicon or other aarch64 machine use <code>karatasi-aarch64.pkg.tar.zst</code> instead. Prefer to build it yourself? Clone the repo and run <code>makepkg -si</code> in <code>packaging/</code>.</p>
+                  <div class="cmd"><pre><code><span class="p">$</span> sudo pacman -U https://karatasi.app/karatasi.pkg.tar.zst</code></pre><button type="button" data-copy="sudo pacman -U https://karatasi.app/karatasi.pkg.tar.zst">copy</button></div>
                 </div>
               </div>
               <div>
@@ -402,7 +402,7 @@ dofile(<span class="s">"/usr/share/karatasi/hypr/karatasi.lua"</span>)</code></p
     <footer>
       <div class="wrap">
         <span>Karatasi is Swahili for paper. Built for <a href="https://omarchy.org">Omarchy</a>.</span>
-        <span><a href="https://github.com/HemalR/karatasi">GitHub</a> · <a href="https://github.com/HemalR/karatasi/blob/main/LICENSE">MIT</a> · <a href="https://aur.archlinux.org/packages/karatasi">AUR</a></span>
+        <span><a href="https://github.com/HemalR/karatasi">GitHub</a> · <a href="https://github.com/HemalR/karatasi/blob/main/LICENSE">MIT</a> · <a href="https://github.com/HemalR/karatasi/releases/latest">Releases</a></span>
       </div>
     </footer>
 
