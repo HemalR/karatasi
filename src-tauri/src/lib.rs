@@ -257,6 +257,9 @@ fn open_new_note_window(app: AppHandle, state: State<AppState>) -> Result<(), St
     build_note_window(&app, &format!("note-new-{n}"), "index.html?new=1", if tiled { "Karatasi Tiled" } else { "Karatasi" })
 }
 
+/// No window has a minimum size. Hyprland can tile a window narrower than any minimum, and GTK
+/// then keeps the buffer at the minimum while Hyprland squeezes it into the tile: the text shrinks
+/// and every click lands left of the character under the pointer.
 fn build_note_window(app: &AppHandle, label: &str, url: &str, title: &str) -> Result<(), String> {
     if let Some(existing) = app.get_webview_window(label) {
         let _ = existing.show();
@@ -266,7 +269,6 @@ fn build_note_window(app: &AppHandle, label: &str, url: &str, title: &str) -> Re
     WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
         .title(title)
         .inner_size(760.0, 560.0)
-        .min_inner_size(420.0, 300.0)
         .decorations(false)
         .center()
         .build()
@@ -392,7 +394,6 @@ fn spawn_main(app: &AppHandle, note: Option<&str>) -> tauri::Result<tauri::Webvi
     let w = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
         .title("Karatasi")
         .inner_size(960.0, 720.0)
-        .min_inner_size(420.0, 300.0)
         .decorations(false)
         .center()
         .build()?;

@@ -18,8 +18,6 @@
         "url": "index.html",
         "width": 960,
         "height": 720,
-        "minWidth": 420,
-        "minHeight": 300,
         "decorations": false,
         "visible": true,
         "center": true
