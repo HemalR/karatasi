@@ -7,10 +7,11 @@ import { Placeholder } from "@tiptap/extensions";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ago, applyTheme, watchTheme } from "./theme";
+import { ago, applyTheme, Keymap, watchTheme, type Theme } from "./theme";
 
+// A draft has no id: it lives only in the editor until the first save writes its file.
 interface Note {
-  id: string;
+  id: string | null;
   title: string;
   content: string;
   modified: number;
@@ -30,12 +31,31 @@ let isMain = win.label === "main" || win.label.startsWith("main-");
 const params = new URLSearchParams(location.search);
 const statusEl = document.getElementById("status")!;
 
+// Editor shortcuts; each can be overridden under `[keys]` in ~/.config/karatasi/config.toml.
+const DEFAULT_KEYS: Record<string, string[]> = {
+  search: ["Ctrl+K", "Ctrl+P"],
+  new: ["Ctrl+N"],
+  new_window: ["Ctrl+Shift+N"],
+  todo: ["Ctrl+Enter"],
+  prev: ["Ctrl+["],
+  next: ["Ctrl+]"],
+  delete: ["Ctrl+Shift+Backspace"],
+  hide: ["Escape"],
+};
+let keys = new Keymap(DEFAULT_KEYS);
+
+function applySettings(t: Theme): void {
+  keys = new Keymap(DEFAULT_KEYS, t.keys);
+  keys.renderHints(document);
+}
+
 let current: Note | null = null;
 let dirty = false;
 let saveTimer: number | undefined;
 let lastSaved = "";
 let saveChain: Promise<void> = Promise.resolve();
-let deleteArmedUntil = 0;
+// A short message in the status bar, e.g. after a delete.
+let notice: { text: string; until: number } | null = null;
 
 // The first block is always the title: a heading, followed by anything.
 const TitledDocument = Document.extend({ content: "heading block*" });
@@ -91,6 +111,11 @@ function normalize(markdown: string): string {
   return /^\s*#/.test(first) ? markdown : `# \n\n${markdown}`;
 }
 
+// No title and no body: nothing worth a file.
+function isBlank(markdown: string): boolean {
+  return markdown.replace(/^[#\s]+/, "").trim() === "";
+}
+
 function setNote(note: Note): void {
   current = note;
   dirty = false;
@@ -99,10 +124,16 @@ function setNote(note: Note): void {
   const untitled = note.title === "Untitled";
   editor.commands.focus(untitled ? "start" : "end", { scrollIntoView: !untitled });
   if (untitled) editor.view.dom.scrollTop = 0;
-  if (isMain) void invoke("set_last_note", { id: note.id });
+  if (isMain && note.id) void invoke("set_last_note", { id: note.id });
   syncTitle();
   renderStatus();
   void invoke("debug_dump", { name: "html", text: editor.getHTML() });
+}
+
+// Ctrl N: an empty note that exists only here. Its file appears with the first keystroke.
+function setDraft(): void {
+  const now = Date.now();
+  setNote({ id: null, title: "Untitled", content: "", modified: now, created: now });
 }
 
 // The backend finds the main window in Hyprland's client list by its exact title "Karatasi"; every other
@@ -123,39 +154,65 @@ function flushSave(): Promise<void> {
   if (!current || !dirty) return saveChain;
   const note = current;
   const md = cleanMarkdown(editor.getMarkdown());
+  // A blank draft stays off disk.
+  if (!note.id && isBlank(md)) {
+    dirty = false;
+    return saveChain;
+  }
   dirty = false;
   lastSaved = md;
   saveChain = saveChain.then(async () => {
     try {
+      // Read the id here, not when queued: a draft's first save (still in the chain) assigns it,
+      // and the next save must update that file rather than create a second one.
       const saved = await invoke<Note>("save_note", { id: note.id, content: md });
-      if (current && current.id === note.id) {
-        current.id = saved.id;
-        current.title = saved.title;
-        current.modified = saved.modified;
+      note.id = saved.id;
+      note.title = saved.title;
+      note.modified = saved.modified;
+      if (current === note) {
         syncTitle();
         if (isMain) void invoke("set_last_note", { id: saved.id });
       }
     } catch (e) {
       console.error("save failed", e);
-      dirty = true;
+      if (current === note) dirty = true;
     }
     renderStatus();
   });
   return saveChain;
 }
 
-async function load(id: string): Promise<void> {
+// Leaving a note (for another, or by hiding or closing the window). An untitled, empty note is
+// removed on the way out: drafts never reach disk, so the only blank file is one the user emptied.
+async function leave(): Promise<void> {
   await flushSave();
+  if (!current || !current.id || !isBlank(cleanMarkdown(editor.getMarkdown()))) return;
+  const blank = current;
+  current = null;
+  try {
+    await invoke("discard_note", { id: blank.id });
+    // Nothing to reopen next launch; boot falls back to the newest note.
+    if (isMain) await invoke("set_last_note", { id: "" });
+  } catch (e) {
+    console.error("discard failed", e);
+  }
+}
+
+async function load(id: string): Promise<void> {
+  if (current && current.id === id) return flushSave();
+  await leave();
   try {
     setNote(await invoke<Note>("get_note", { id }));
   } catch (e) {
     console.error(e);
+    if (!current) setDraft();
   }
 }
 
 async function newNote(): Promise<void> {
-  await flushSave();
-  setNote(await invoke<Note>("create_note", {}));
+  if (current && !current.id && !dirty && isBlank(cleanMarkdown(editor.getMarkdown()))) return;
+  await leave();
+  setDraft();
 }
 
 // A new note in its own window; this window keeps showing what it has. The backend matches the
@@ -165,31 +222,44 @@ async function newNoteWindow(): Promise<void> {
   await invoke("open_new_note_window");
 }
 
+// One press deletes. The backend keeps the note for the life of a system toast whose click brings
+// it back (see `note-restored`), so there is no confirmation step.
 async function deleteCurrent(): Promise<void> {
   if (!current) return;
-  const now = Date.now();
-  if (now > deleteArmedUntil) {
-    deleteArmedUntil = now + 2500;
-    renderStatus();
-    window.setTimeout(renderStatus, 2600);
-    return;
-  }
-  deleteArmedUntil = 0;
-  const gone = current.id;
+  // A draft has no file; dropping it is just starting over.
+  if (!current.id) return setDraft();
+  await flushSave();
+  const gone = current;
   dirty = false;
   current = null;
-  await invoke("delete_note", { id: gone });
+  try {
+    await invoke("delete_note", { id: gone.id });
+  } catch (e) {
+    console.error("delete failed", e);
+    current = gone;
+    renderStatus();
+    return;
+  }
+  showNotice(`Deleted “${gone.title}”`);
   const list = await invoke<NoteMeta[]>("list_notes");
   if (list.length > 0) await load(list[0].id);
-  else await newNote();
+  else setDraft();
+}
+
+function showNotice(text: string, ms = 4000): void {
+  notice = { text, until: Date.now() + ms };
+  renderStatus();
+  window.setTimeout(renderStatus, ms + 50);
 }
 
 async function step(direction: 1 | -1): Promise<void> {
   if (!current) return;
   const list = await invoke<NoteMeta[]>("list_notes");
+  if (list.length === 0) return;
   const i = list.findIndex((n) => n.id === current!.id);
-  const next = list[(i + direction + list.length) % list.length];
-  if (next && next.id !== current.id) await load(next.id);
+  // From a draft (not in the list), step to the newest or the oldest note.
+  const next = i < 0 ? list[direction === 1 ? 0 : list.length - 1] : list[(i + direction + list.length) % list.length];
+  if (next.id !== current.id) await load(next.id);
 }
 
 function toggleTodo(): void {
@@ -204,55 +274,53 @@ function toggleTodo(): void {
 // ---------- status bar ----------
 
 function renderStatus(): void {
-  if (Date.now() < deleteArmedUntil) {
-    statusEl.textContent = "Press Ctrl Shift ⌫ again to delete";
-    statusEl.dataset.warn = "1";
+  if (notice && Date.now() < notice.until) {
+    statusEl.textContent = notice.text;
     return;
   }
+  notice = null;
   delete statusEl.dataset.warn;
   if (!current) {
     statusEl.textContent = "";
     return;
   }
-  statusEl.textContent = dirty ? "Editing" : `Saved · ${ago(current.modified)}`;
+  statusEl.textContent = dirty ? "Editing" : current.id ? `Saved · ${ago(current.modified)}` : "New note";
 }
 
 // ---------- keys ----------
 
 async function hideOrClose(): Promise<void> {
-  await flushSave();
-  if (isMain) await invoke("hide_window");
-  else await win.close();
+  if (isMain) {
+    await invoke("hide_window");
+    await leave();
+    // The window comes back on a fresh draft rather than on the discarded note.
+    if (!current) setDraft();
+  } else {
+    await leave();
+    await win.close();
+  }
 }
+
+const ACTIONS: Record<string, () => void> = {
+  hide: () => void hideOrClose(),
+  delete: () => void deleteCurrent(),
+  search: () => void flushSave().then(() => invoke("show_switcher")),
+  new: () => void newNote(),
+  new_window: () => void newNoteWindow(),
+  todo: toggleTodo,
+  prev: () => void step(-1),
+  next: () => void step(1),
+};
 
 window.addEventListener(
   "keydown",
   (e) => {
-    const ctrl = e.ctrlKey || e.metaKey;
-    if (e.key === "Escape") {
-      e.preventDefault();
-      void hideOrClose();
-    } else if (ctrl && !e.shiftKey && (e.key === "k" || e.key === "p")) {
-      e.preventDefault();
-      void flushSave().then(() => invoke("show_switcher"));
-    } else if (ctrl && !e.shiftKey && e.key === "n") {
-      e.preventDefault();
-      void newNote();
-    } else if (ctrl && e.shiftKey && e.key.toLowerCase() === "n") {
-      e.preventDefault();
-      void newNoteWindow();
-    } else if (ctrl && e.shiftKey && (e.key === "Backspace" || e.key === "Delete")) {
-      e.preventDefault();
-      void deleteCurrent();
-    } else if (ctrl && e.key === "Enter") {
-      e.preventDefault();
-      toggleTodo();
-    } else if (ctrl && e.key === "[") {
-      e.preventDefault();
-      void step(-1);
-    } else if (ctrl && e.key === "]") {
-      e.preventDefault();
-      void step(1);
+    for (const [name, run] of Object.entries(ACTIONS)) {
+      if (keys.is(e, name)) {
+        e.preventDefault();
+        run();
+        return;
+      }
     }
   },
   { capture: true },
@@ -266,6 +334,8 @@ window.addEventListener("contextmenu", (e) => e.preventDefault());
 // window's label; a plain `listen` would also receive events the backend targets at other windows.
 void win.listen<{ id: string }>("open-note", (e) => void load(e.payload.id));
 void win.listen("new-note", () => void newNote());
+// Undo from the delete toast: the note is back on disk, show it again.
+void win.listen<{ id: string }>("note-restored", (e) => void load(e.payload.id));
 void listen<{ from: string; to: string }>("note-renamed", (e) => {
   if (current && current.id === e.payload.from) current.id = e.payload.to;
 });
@@ -282,7 +352,11 @@ void listen<{ id: string }>("notes-changed", async (e) => {
     /* deleted elsewhere; keep what is on screen */
   }
 });
-void win.listen("main-hiding", () => void flushSave());
+void win.listen("main-hiding", () => {
+  void leave().then(() => {
+    if (!current) setDraft();
+  });
+});
 void win.listen("close-request", () => void hideOrClose());
 void win.listen("demoted", () => {
   isMain = false;
@@ -308,11 +382,11 @@ window.addEventListener("unhandledrejection", (e) => reportError(`Error: ${Strin
 
 async function boot(): Promise<void> {
   try {
-    await applyTheme();
+    applySettings(await applyTheme());
   } catch (e) {
     reportError(`Theme failed: ${String(e)}`);
   }
-  watchTheme();
+  watchTheme(applySettings);
   const startFresh = params.has("new");
   const wanted =
     params.get("note") ?? (isMain && !startFresh ? await invoke<string | null>("get_last_note") : null);
@@ -324,12 +398,12 @@ async function boot(): Promise<void> {
       note = null;
     }
   }
-  if (!note && startFresh) note = await invoke<Note>("create_note", {});
-  if (!note) {
+  if (!note && !startFresh) {
     const list = await invoke<NoteMeta[]>("list_notes");
-    note = list.length > 0 ? await invoke<Note>("get_note", { id: list[0].id }) : await invoke<Note>("create_note", {});
+    if (list.length > 0) note = await invoke<Note>("get_note", { id: list[0].id });
   }
-  setNote(note);
+  if (note) setNote(note);
+  else setDraft();
 }
 
 void boot()

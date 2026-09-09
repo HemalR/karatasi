@@ -70,6 +70,11 @@ pub fn title_of(content: &str) -> String {
     }
 }
 
+/// No title and no body: only heading markers and whitespace.
+pub fn is_blank(content: &str) -> bool {
+    content.trim_start_matches(|c: char| c == '#' || c.is_whitespace()).trim().is_empty()
+}
+
 fn preview_of(content: &str) -> String {
     let mut lines = content.lines().map(str::trim).filter(|l| !l.is_empty());
     lines.next(); // title line
@@ -197,15 +202,12 @@ impl Store {
             .unwrap()
     }
 
-    pub fn create(&mut self, title: Option<&str>) -> Result<Note, String> {
-        let title = title.map(str::trim).filter(|t| !t.is_empty());
-        let content = match title {
-            Some(t) => format!("# {t}\n\n"),
-            None => String::new(),
-        };
-        let id = self.unique_id(&slug(title.unwrap_or("untitled")), None);
+    /// Write a brand-new note file named after the content's title. Nothing is written for a
+    /// note until it has content: drafts live only in the editor (see `flushSave` in main.ts).
+    pub fn create(&mut self, content: &str) -> Result<Note, String> {
+        let id = self.unique_id(&slug(&title_of(content)), None);
         let path = self.path_of(&id);
-        fs::write(&path, &content).map_err(|e| e.to_string())?;
+        fs::write(&path, content).map_err(|e| e.to_string())?;
         let note = load_path(&path).ok_or("could not read new note")?;
         self.notes.insert(id, note.clone());
         Ok(note)
@@ -234,14 +236,44 @@ impl Store {
         Ok(note)
     }
 
-    pub fn delete(&mut self, id: &str) -> Result<(), String> {
+    /// Delete a note: into the system trash (`gio trash`, which is what Nautilus uses) when that
+    /// works, otherwise removed outright. Returns the note so the caller can offer an undo.
+    pub fn delete(&mut self, id: &str) -> Result<Note, String> {
+        let note = self.notes.get(id).cloned().ok_or_else(|| format!("no note {id}"))?;
         let path = self.path_of(id);
-        let trash = self.dir.join(".trash");
-        fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
-        let target = trash.join(format!("{id}-{}.md", now_ms()));
-        fs::rename(&path, &target).map_err(|e| e.to_string())?;
+        let trashed = std::process::Command::new("gio")
+            .arg("trash")
+            .arg(&path)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !trashed {
+            fs::remove_file(&path).map_err(|e| e.to_string())?;
+        }
         self.notes.remove(id);
-        Ok(())
+        Ok(note)
+    }
+
+    /// Put a deleted note back from the copy held in memory (undo).
+    pub fn restore(&mut self, note: &Note) -> Result<Note, String> {
+        let id = self.unique_id(&note.id, None);
+        let path = self.path_of(&id);
+        fs::write(&path, &note.content).map_err(|e| e.to_string())?;
+        let restored = load_path(&path).ok_or("could not re-read restored note")?;
+        self.notes.insert(id, restored.clone());
+        Ok(restored)
+    }
+
+    /// Remove a blank note outright (no trash: there is nothing to recover). Returns whether the
+    /// note was blank and got removed; a note with content is left alone.
+    pub fn discard_blank(&mut self, id: &str) -> Result<bool, String> {
+        let Some(note) = self.notes.get(id) else { return Ok(false) };
+        if !is_blank(&note.content) {
+            return Ok(false);
+        }
+        fs::remove_file(self.path_of(id)).map_err(|e| e.to_string())?;
+        self.notes.remove(id);
+        Ok(true)
     }
 
     pub fn search(&self, query: &str, limit: usize) -> Vec<Hit> {

@@ -27,6 +27,8 @@ pub struct AppState {
     /// window and a fresh floating main (`main-N`) takes over the role.
     main_label: Mutex<String>,
     main_gen: Mutex<u32>,
+    /// Counter for draft note windows (`note-new-N`), which have no note id to name themselves after.
+    note_gen: Mutex<u32>,
     watcher: Mutex<Option<RecommendedWatcher>>,
 }
 
@@ -77,28 +79,75 @@ fn get_note(state: State<AppState>, id: String) -> Result<Note, String> {
     state.store.lock().unwrap().get(&id).ok_or_else(|| format!("no note {id}"))
 }
 
+/// A titled note from the switcher's "Create" row. Blank notes are never created on disk; an
+/// editor draft becomes a file on its first save (`save_note` without an id).
 #[tauri::command]
-fn create_note(app: AppHandle, state: State<AppState>, title: Option<String>) -> Result<Note, String> {
-    let note = state.store.lock().unwrap().create(title.as_deref())?;
+fn create_note(app: AppHandle, state: State<AppState>, title: String) -> Result<Note, String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("a new note needs a title".to_string());
+    }
+    let note = state.store.lock().unwrap().create(&format!("# {title}\n\n"))?;
     let _ = app.emit("notes-changed", Changed { id: note.id.clone() });
     Ok(note)
 }
 
+/// Write a note; without an id, create its file (a draft's first save).
 #[tauri::command]
-fn save_note(app: AppHandle, state: State<AppState>, id: String, content: String) -> Result<Note, String> {
-    let note = state.store.lock().unwrap().save(&id, &content)?;
-    if note.id != id {
-        let _ = app.emit("note-renamed", Renamed { from: id, to: note.id.clone() });
+fn save_note(app: AppHandle, state: State<AppState>, id: Option<String>, content: String) -> Result<Note, String> {
+    let note = match &id {
+        Some(id) => state.store.lock().unwrap().save(id, &content)?,
+        None => state.store.lock().unwrap().create(&content)?,
+    };
+    if let Some(from) = id.filter(|from| *from != note.id) {
+        let _ = app.emit("note-renamed", Renamed { from, to: note.id.clone() });
     }
     let _ = app.emit("notes-changed", Changed { id: note.id.clone() });
     Ok(note)
 }
 
+/// Drop an untitled, empty note the editor is leaving behind. Does nothing to a note with content.
 #[tauri::command]
-fn delete_note(app: AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
-    state.store.lock().unwrap().delete(&id)?;
+fn discard_note(app: AppHandle, state: State<AppState>, id: String) -> Result<bool, String> {
+    let gone = state.store.lock().unwrap().discard_blank(&id)?;
+    if gone {
+        let _ = app.emit("notes-changed", Changed { id });
+    }
+    Ok(gone)
+}
+
+/// Delete a note and offer to undo it from a system toast. The note is held in memory for as long
+/// as the toast is up; clicking it writes the note back and reopens it in the window that deleted it.
+#[tauri::command]
+fn delete_note(app: AppHandle, state: State<AppState>, window: tauri::WebviewWindow, id: String) -> Result<(), String> {
+    let note = state.store.lock().unwrap().delete(&id)?;
     let _ = app.emit("notes-changed", Changed { id });
+    let label = window.label().to_string();
+    std::thread::spawn(move || {
+        if undo_toast(&note.title) {
+            let restored = app.state::<AppState>().store.lock().unwrap().restore(&note);
+            if let Ok(restored) = restored {
+                let _ = app.emit("notes-changed", Changed { id: restored.id.clone() });
+                let _ = app.emit_to(&label, "note-restored", Changed { id: restored.id });
+            }
+        }
+    });
     Ok(())
+}
+
+/// Show "Note deleted" with click-to-undo and block until the toast is clicked or gone. Returns
+/// true on undo. The Omarchy shell (and mako, dunst) invoke the "default" action on click and keep
+/// a low-urgency toast up for about five seconds; libnotify then prints the action's id.
+fn undo_toast(title: &str) -> bool {
+    let out = std::process::Command::new("notify-send")
+        .args(["-a", "Karatasi", "-i", "karatasi", "-u", "low", "-t", "5000", "-e", "-A", "default=Undo"])
+        .arg("Note deleted")
+        .arg(format!("{title} · click to undo"))
+        .output();
+    match out {
+        Ok(out) => String::from_utf8_lossy(&out.stdout).trim() == "default",
+        Err(_) => false,
+    }
 }
 
 #[tauri::command]
@@ -173,10 +222,18 @@ fn open_in_main(app: AppHandle, id: String) {
     hide_switcher(app);
 }
 
+/// A fresh draft in the main editor window (used by the switcher when there is no title to create with).
+#[tauri::command]
+fn new_in_main(app: AppHandle) {
+    handle_action(&app, "new");
+    hide_switcher(app);
+}
+
 /// Open a note in its own floating window.
 #[tauri::command]
 fn open_note_window(app: AppHandle, id: String) -> Result<(), String> {
-    build_note_window(&app, &id, "Karatasi")?;
+    let label = format!("note-{}", store::slug(&id));
+    build_note_window(&app, &label, &format!("index.html?note={}", urlencode(&id)), "Karatasi")?;
     hide_switcher(app);
     Ok(())
 }
@@ -190,21 +247,23 @@ fn open_new_note_window(app: AppHandle, state: State<AppState>) -> Result<(), St
     if !tiled {
         hypr_dispatch("hl.dsp.window.pin({ action = \"off\" })");
     }
-    let note = state.store.lock().unwrap().create(None)?;
-    let _ = app.emit("notes-changed", Changed { id: note.id.clone() });
+    // The window opens on a draft; its file appears once something is typed.
+    let n = {
+        let mut gen = state.note_gen.lock().unwrap();
+        *gen += 1;
+        *gen
+    };
     // "Karatasi Tiled" dodges the float rule; the window retitles itself to "Karatasi - <note>" on load.
-    build_note_window(&app, &note.id, if tiled { "Karatasi Tiled" } else { "Karatasi" })
+    build_note_window(&app, &format!("note-new-{n}"), "index.html?new=1", if tiled { "Karatasi Tiled" } else { "Karatasi" })
 }
 
-fn build_note_window(app: &AppHandle, id: &str, title: &str) -> Result<(), String> {
-    let label = format!("note-{}", store::slug(id));
-    if let Some(existing) = app.get_webview_window(&label) {
+fn build_note_window(app: &AppHandle, label: &str, url: &str, title: &str) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window(label) {
         let _ = existing.show();
         let _ = existing.set_focus();
         return Ok(());
     }
-    let url = format!("index.html?note={}", urlencode(id));
-    WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
+    WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
         .title(title)
         .inner_size(760.0, 560.0)
         .min_inner_size(420.0, 300.0)
@@ -517,7 +576,8 @@ fn start_watcher(app: AppHandle) -> notify::Result<RecommendedWatcher> {
             return;
         }
         for path in event.paths {
-            if path.file_name().map(|n| n == "theme.name" || n == "font.name").unwrap_or(false) {
+            let is_config = path == theme::config_path();
+            if is_config || path.file_name().map(|n| n == "theme.name" || n == "font.name").unwrap_or(false) {
                 let mut last = last_theme_emit.lock().unwrap();
                 if last.elapsed() > Duration::from_millis(300) {
                     *last = std::time::Instant::now();
@@ -534,6 +594,11 @@ fn start_watcher(app: AppHandle) -> notify::Result<RecommendedWatcher> {
     })?;
     watcher.watch(&dir, RecursiveMode::NonRecursive)?;
     let _ = watcher.watch(&state_dir, RecursiveMode::NonRecursive);
+    // Editing ~/.config/karatasi/config.toml re-applies font and keys without a restart.
+    if let Some(config_dir) = theme::config_path().parent() {
+        let _ = fs::create_dir_all(config_dir);
+        let _ = watcher.watch(config_dir, RecursiveMode::NonRecursive);
+    }
     Ok(watcher)
 }
 
@@ -556,6 +621,7 @@ pub fn run() {
             switcher_ready: Mutex::new(false),
             main_label: Mutex::new("main".to_string()),
             main_gen: Mutex::new(0),
+            note_gen: Mutex::new(0),
             watcher: Mutex::new(None),
         })
         .setup(|app| {
@@ -575,6 +641,7 @@ pub fn run() {
             create_note,
             save_note,
             delete_note,
+            discard_note,
             search_notes,
             get_theme,
             debug_dump,
@@ -585,6 +652,7 @@ pub fn run() {
             hide_switcher,
             hide_window,
             open_in_main,
+            new_in_main,
             open_note_window,
             open_new_note_window,
             frontend_ready

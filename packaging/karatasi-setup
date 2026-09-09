@@ -27,7 +27,7 @@ if grep -qF "$LINE" "$CONF"; then
   echo "Karatasi is already loaded from $CONF"
 else
   cp "$CONF" "$CONF.bak.karatasi-$(date +%Y%m%d-%H%M%S)"
-  printf '\n-- Karatasi notes: Hyper+N toggles the floating notes window (karatasi-setup --remove undoes this).\n%s\n' "$LINE" >>"$CONF"
+  printf '\n-- Karatasi notes: Super+N toggles the floating notes window (karatasi-setup --remove undoes this).\n%s\n' "$LINE" >>"$CONF"
   echo "added Karatasi to $CONF"
 fi
 
@@ -35,4 +35,4 @@ hyprctl reload >/dev/null
 if ! pgrep -x karatasi >/dev/null; then
   setsid uwsm-app -- karatasi start >/dev/null 2>&1 &
 fi
-echo "Karatasi is running. Press Hyper+N (Super+Ctrl+Alt+Shift+N) to open your notes."
+echo "Karatasi is running. Press Super+N to open your notes."

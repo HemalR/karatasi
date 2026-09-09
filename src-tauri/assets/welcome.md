@@ -4,15 +4,21 @@ Floating notes for Omarchy. Karatasi is Swahili for paper: somewhere to jot thin
 
 ## Keys
 
-- **Hyper N** show or hide the notes window, from anywhere (Hyper is Super Ctrl Alt Shift)
+- **Super N** show or hide the notes window, from anywhere
 - **Ctrl K** search every note
 - **Ctrl N** new note
 - **Ctrl Shift N** new note in its own window
 - **Ctrl Enter** turn the line into a todo, or tick it
 - **Ctrl \[** and **Ctrl \]** previous and next note
-- **Ctrl Shift Backspace** twice to delete a note (it goes to `~/Notes/.trash`)
+- **Ctrl Shift Backspace** delete the note (it goes to the system trash; click the toast to undo)
 - **Esc** or **Super W** hide the window
 - **Super T** tile the window, **Super T** again to float it
+
+Every key above except Super N and Super T can be changed under `[keys]` in `~/.config/karatasi/config.toml`, for example `delete = "Ctrl+D"`; the README lists the names. To toggle notes with a different key, put a line like this above the `dofile("/usr/share/karatasi/hypr/karatasi.lua")` line in `~/.config/hypr/hyprland.lua`, then reload Hyprland:
+
+```lua
+karatasi_toggle_key = "SUPER + ALT + N"
+```
 
 ## Writing
 
@@ -27,7 +33,7 @@ The first line is always the title, and the file is named after it.
 
 ## Windows
 
-The main window floats, stays pinned above everything and follows you across workspaces. Tile it with Super T when you want it to live on one workspace instead. Hyper N then gives you a fresh floating note and leaves the tiled one alone. Ctrl Shift N opens a new note that matches the window you are in: floating and pinned, or tiled.
+The main window floats, stays pinned above everything and follows you across workspaces. Tile it with Super T when you want it to live on one workspace instead. Super N then gives you a fresh floating note and leaves the tiled one alone. Ctrl Shift N opens a new note that matches the window you are in: floating and pinned, or tiled.
 
 ## Search
 

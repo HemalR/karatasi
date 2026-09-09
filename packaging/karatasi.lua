@@ -7,11 +7,11 @@
 --
 -- Set any of these before the dofile line to change the defaults:
 --
---   karatasi_toggle_key = "SUPER + CTRL + ALT + SHIFT + N"  -- Hyper N
---   karatasi_close_key  = "SUPER + W"                       -- false to leave Omarchy's close key alone
---   karatasi_autostart  = true                              -- keep it warm so the toggle is instant
+--   karatasi_toggle_key = "SUPER + N"  -- unused by stock Omarchy; e.g. "SUPER + CTRL + ALT + SHIFT + N" for Hyper N
+--   karatasi_close_key  = "SUPER + W"  -- false to leave Omarchy's close key alone
+--   karatasi_autostart  = true         -- keep it warm so the toggle is instant
 
-local toggle_key = karatasi_toggle_key or "SUPER + CTRL + ALT + SHIFT + N"
+local toggle_key = karatasi_toggle_key or "SUPER + N"
 local close_key = karatasi_close_key
 if close_key == nil then close_key = "SUPER + W" end
 local autostart = karatasi_autostart

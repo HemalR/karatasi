@@ -7,6 +7,7 @@ export interface Theme {
   colors: Record<string, string>;
   font: string;
   font_size: number;
+  keys: Record<string, string[]>;
 }
 
 // CSS variable, Omarchy colors.toml key, fallback (Matte Black).
@@ -24,7 +25,7 @@ const MAP: [string, string, string][] = [
   ["--red", "red", "#d35f5f"],
 ];
 
-export async function applyTheme(): Promise<void> {
+export async function applyTheme(): Promise<Theme> {
   const t = await invoke<Theme>("get_theme");
   const root = document.documentElement;
   for (const [cssVar, key, fallback] of MAP) {
@@ -33,12 +34,131 @@ export async function applyTheme(): Promise<void> {
   root.style.setProperty("--font", `"${t.font}"`);
   root.style.setProperty("--font-size", `${t.font_size}px`);
   root.dataset.mode = t.mode;
+  return t;
 }
 
-export function watchTheme(): void {
+export function watchTheme(onChange?: (t: Theme) => void): void {
   void listen("theme-changed", () => {
-    void applyTheme();
+    void applyTheme().then(onChange);
   });
+}
+
+// ---------- key chords from the config file ----------
+
+export interface Chord {
+  ctrl: boolean;
+  shift: boolean;
+  alt: boolean;
+  meta: boolean;
+  key: string;
+}
+
+const KEY_ALIASES: Record<string, string> = {
+  backspace: "Backspace",
+  bs: "Backspace",
+  delete: "Delete",
+  del: "Delete",
+  enter: "Enter",
+  return: "Enter",
+  esc: "Escape",
+  escape: "Escape",
+  space: " ",
+  tab: "Tab",
+  up: "ArrowUp",
+  down: "ArrowDown",
+  left: "ArrowLeft",
+  right: "ArrowRight",
+};
+
+/// Parse "Ctrl+Shift+Backspace" (also "ctrl shift backspace", "Super+D"). Null when there is no key.
+export function parseChord(text: string): Chord | null {
+  const chord: Chord = { ctrl: false, shift: false, alt: false, meta: false, key: "" };
+  for (const raw of text.split(/[+\s]+/)) {
+    const t = raw.trim().toLowerCase();
+    if (t === "") continue;
+    if (t === "ctrl" || t === "control") chord.ctrl = true;
+    else if (t === "shift") chord.shift = true;
+    else if (t === "alt" || t === "option") chord.alt = true;
+    else if (t === "super" || t === "meta" || t === "cmd" || t === "win") chord.meta = true;
+    else if (chord.key === "") chord.key = KEY_ALIASES[t] ?? (t.length === 1 ? t : raw.trim());
+    else return null;
+  }
+  return chord.key === "" ? null : chord;
+}
+
+// Ctrl in a chord also accepts Cmd/Super, as every built-in editor shortcut does; "Super" in a
+// chord means only that key.
+export function chordMatches(e: KeyboardEvent, c: Chord): boolean {
+  const ctrlOk = c.ctrl ? e.ctrlKey || e.metaKey : !e.ctrlKey;
+  const metaOk = c.meta ? e.metaKey : c.ctrl || !e.metaKey;
+  return ctrlOk && metaOk && e.shiftKey === c.shift && e.altKey === c.alt && e.key.toLowerCase() === c.key.toLowerCase();
+}
+
+const KEY_LABELS: Record<string, string> = {
+  Backspace: "⌫",
+  Delete: "Del",
+  Enter: "⏎",
+  Escape: "Esc",
+  " ": "Space",
+  ArrowUp: "↑",
+  ArrowDown: "↓",
+  ArrowLeft: "←",
+  ArrowRight: "→",
+};
+
+/// "Ctrl ⇧ ⌫" style label for the hint bar.
+export function chordLabel(c: Chord): string {
+  const parts: string[] = [];
+  if (c.ctrl) parts.push("Ctrl");
+  if (c.meta) parts.push("Super");
+  if (c.alt) parts.push("Alt");
+  if (c.shift) parts.push("⇧");
+  parts.push(KEY_LABELS[c.key] ?? (c.key.length === 1 ? c.key.toUpperCase() : c.key));
+  return parts.join(" ");
+}
+
+/// Named actions, each with one or more chords. Built from defaults plus the `[keys]` table in
+/// the config file; a name the config sets replaces that action's defaults entirely.
+export class Keymap {
+  private chords = new Map<string, Chord[]>();
+
+  constructor(defaults: Record<string, string[]>, overrides: Record<string, string[]> = {}) {
+    for (const [name, list] of Object.entries(defaults)) this.set(name, list, true);
+    for (const [name, list] of Object.entries(overrides)) {
+      if (!(name in defaults)) {
+        console.warn(`config [keys]: unknown action "${name}"`);
+        continue;
+      }
+      if (!this.set(name, list, false)) this.set(name, defaults[name], true);
+    }
+  }
+
+  private set(name: string, list: string[], trusted: boolean): boolean {
+    const parsed: Chord[] = [];
+    for (const text of list) {
+      const c = parseChord(text);
+      if (c) parsed.push(c);
+      else if (!trusted) console.warn(`config [keys]: cannot read "${text}" for ${name}`);
+    }
+    if (parsed.length === 0) return false;
+    this.chords.set(name, parsed);
+    return true;
+  }
+
+  is(e: KeyboardEvent, name: string): boolean {
+    return (this.chords.get(name) ?? []).some((c) => chordMatches(e, c));
+  }
+
+  /// Label of the first chord, for hint bars.
+  label(name: string): string {
+    const c = this.chords.get(name)?.[0];
+    return c ? chordLabel(c) : "";
+  }
+
+  /// Fill every `<kbd data-key="name">` inside `root` with its chord label.
+  renderHints(root: ParentNode): void {
+    for (const el of root.querySelectorAll<HTMLElement>("kbd[data-key]")) el.textContent = this.label(el.dataset.key!);
+  }
 }
 
 export function ago(ms: number): string {

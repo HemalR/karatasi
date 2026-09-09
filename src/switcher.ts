@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ago, applyTheme, escapeHtml, watchTheme } from "./theme";
+import { ago, applyTheme, escapeHtml, Keymap, watchTheme, type Theme } from "./theme";
 
 interface Hit {
   id: string;
@@ -17,6 +17,22 @@ const win = getCurrentWindow();
 const q = document.getElementById("q") as HTMLInputElement;
 const list = document.getElementById("results")!;
 const statusEl = document.getElementById("status")!;
+
+// Switcher shortcuts; overridable under `[keys]` in ~/.config/karatasi/config.toml.
+const DEFAULT_KEYS: Record<string, string[]> = {
+  switcher_down: ["Down", "Ctrl+J", "Ctrl+N"],
+  switcher_up: ["Up", "Ctrl+K", "Ctrl+P"],
+  switcher_open: ["Enter"],
+  switcher_open_window: ["Shift+Enter"],
+  switcher_create: ["Ctrl+Enter"],
+  switcher_close: ["Escape"],
+};
+let keys = new Keymap(DEFAULT_KEYS);
+
+function applySettings(t: Theme): void {
+  keys = new Keymap(DEFAULT_KEYS, t.keys);
+  keys.renderHints(document);
+}
 
 let hits: Hit[] = [];
 let sel = 0;
@@ -55,7 +71,7 @@ function render(): void {
   if (showCreateRow()) {
     rows.push(
       `<li class="hit create${sel === hits.length ? " sel" : ""}" data-i="${hits.length}">
-        <div class="row"><span class="title">Create “${escapeHtml(q.value.trim())}”</span><span class="time">Ctrl ⏎</span></div>
+        <div class="row"><span class="title">Create “${escapeHtml(q.value.trim())}”</span><span class="time">${escapeHtml(keys.label("switcher_create"))}</span></div>
       </li>`,
     );
   }
@@ -74,9 +90,11 @@ async function refresh(): Promise<void> {
   render();
 }
 
+// Ctrl Enter: a note titled with the query; with no query, a fresh draft in the main window.
 async function create(): Promise<void> {
   const title = q.value.trim();
-  const note = await invoke<Note>("create_note", { title: title || null });
+  if (title === "") return invoke("new_in_main");
+  const note = await invoke<Note>("create_note", { title });
   await invoke("open_in_main", { id: note.id });
 }
 
@@ -95,23 +113,22 @@ function move(delta: number): void {
 }
 
 q.addEventListener("input", () => void refresh());
+const ACTIONS: Record<string, () => void> = {
+  switcher_down: () => move(1),
+  switcher_up: () => move(-1),
+  switcher_create: () => void create(),
+  switcher_open_window: () => void choose(sel, true),
+  switcher_open: () => void choose(sel, false),
+  switcher_close: () => void invoke("hide_switcher"),
+};
+
 q.addEventListener("keydown", (e) => {
-  const ctrl = e.ctrlKey || e.metaKey;
-  if (e.key === "ArrowDown" || (ctrl && (e.key === "j" || e.key === "n"))) {
-    e.preventDefault();
-    move(1);
-  } else if (e.key === "ArrowUp" || (ctrl && (e.key === "k" || e.key === "p"))) {
-    e.preventDefault();
-    move(-1);
-  } else if (e.key === "Enter" && ctrl) {
-    e.preventDefault();
-    void create();
-  } else if (e.key === "Enter") {
-    e.preventDefault();
-    void choose(sel, e.shiftKey);
-  } else if (e.key === "Escape") {
-    e.preventDefault();
-    void invoke("hide_switcher");
+  for (const [name, run] of Object.entries(ACTIONS)) {
+    if (keys.is(e, name)) {
+      e.preventDefault();
+      run();
+      return;
+    }
   }
 });
 
@@ -146,8 +163,8 @@ void win.onFocusChanged(({ payload: focused }) => {
 });
 
 async function boot(): Promise<void> {
-  await applyTheme();
-  watchTheme();
+  applySettings(await applyTheme());
+  watchTheme(applySettings);
   await refresh();
   q.focus();
 }
