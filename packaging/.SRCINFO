@@ -1,0 +1,19 @@
+pkgbase = karatasi
+	pkgdesc = Floating markdown notes for Omarchy, in the spirit of Raycast Notes
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/HemalR/karatasi
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = cargo
+	makedepends = nodejs
+	makedepends = npm
+	depends = webkit2gtk-4.1
+	depends = gtk3
+	depends = hyprland
+	optdepends = uwsm: run the background instance inside the Omarchy session scope
+	source = karatasi-0.1.0.tar.gz::https://github.com/HemalR/karatasi/archive/refs/tags/v0.1.0.tar.gz
+	sha256sums = 74ed2f1a92b5a427877f27d66314e2fa675b103d37f7e5bf2309a4eb16841822
+
+pkgname = karatasi

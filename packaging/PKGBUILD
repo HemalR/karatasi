@@ -11,7 +11,7 @@ makedepends=('cargo' 'nodejs' 'npm')
 optdepends=('uwsm: run the background instance inside the Omarchy session scope')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 # Filled in by scripts/release.sh (updpkgsums) once the tag's tarball exists.
-sha256sums=('SKIP')
+sha256sums=('74ed2f1a92b5a427877f27d66314e2fa675b103d37f7e5bf2309a4eb16841822')
 
 # Everything that needs the network happens here, so build() works in a clean chroot with
 # networking off (extra-x86_64-build).
