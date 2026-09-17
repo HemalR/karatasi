@@ -1,6 +1,7 @@
-import { Editor } from "@tiptap/core";
+import { Editor, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Document from "@tiptap/extension-document";
+import Image from "@tiptap/extension-image";
 import { Markdown } from "@tiptap/markdown";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Placeholder } from "@tiptap/extensions";
@@ -11,6 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ago, applyTheme, Keymap, watchTheme, type Theme } from "./theme";
+import { RecentNotes } from "./recent-notes";
 
 // A draft has no id: it lives only in the editor until the first save writes its file.
 interface Note {
@@ -46,6 +48,7 @@ const DEFAULT_KEYS: Record<string, string[]> = {
   move_down: ["Ctrl+Down"],
   prev: ["Ctrl+["],
   next: ["Ctrl+]"],
+  cycle_recent: ["Ctrl+Tab"],
   delete: ["Ctrl+Shift+Backspace"],
   hide: ["Escape"],
 };
@@ -72,6 +75,8 @@ function fitHints(): void {
 window.addEventListener("resize", fitHints);
 
 let current: Note | null = null;
+const recentNotes = new RecentNotes();
+let cycleChain: Promise<void> = Promise.resolve();
 let dirty = false;
 let saveTimer: number | undefined;
 let lastSaved = "";
@@ -81,6 +86,48 @@ let notice: { text: string; until: number } | null = null;
 
 // The first block is always the title: a heading, followed by anything.
 const TitledDocument = Document.extend({ content: "heading block*" });
+
+// A note links its images relative to the notes folder (`assets/x.png`), which the webview cannot
+// load from its own origin, so the backend serves them over `note-asset://` (see `serve_asset` in
+// lib.rs). Only the rendered <img> gets that URL; the node, and so the markdown, keeps the link.
+const NoteImage = Image.extend({
+  renderHTML({ HTMLAttributes }) {
+    const src = String(HTMLAttributes.src ?? "");
+    const resolved = /^[a-z][a-z0-9+.-]*:/i.test(src) ? src : `note-asset://localhost/${src}`;
+    return ["img", mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, { src: resolved })];
+  },
+});
+
+// Pasted or dropped image files are saved into the notes folder and linked from the note.
+const IMAGE_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/svg+xml": "svg",
+  "image/bmp": "bmp",
+  "image/avif": "avif",
+};
+
+function imageFiles(files: FileList | undefined): File[] {
+  return [...(files ?? [])].filter((f) => f.type in IMAGE_EXT);
+}
+
+// Returns whether the event was handled, as ProseMirror's paste and drop hooks expect.
+function insertImages(files: File[]): boolean {
+  if (files.length === 0) return false;
+  void (async () => {
+    for (const file of files) {
+      // The title as typed, so a draft's first image is named after it before its file exists.
+      const title = editor.state.doc.firstChild?.textContent ?? "";
+      const src = await invoke<string>("save_attachment", new Uint8Array(await file.arrayBuffer()), {
+        headers: { "x-title": encodeURIComponent(title), "x-ext": IMAGE_EXT[file.type] },
+      });
+      editor.chain().focus().insertContent({ type: "image", attrs: { src } }).run();
+    }
+  })().catch((e) => reportError(`Image failed: ${String(e)}`));
+  return true;
+}
 
 const editor = new Editor({
   element: document.getElementById("editor")!,
@@ -99,6 +146,7 @@ const editor = new Editor({
     TaskList,
     // The node view omits data-type, so add it ourselves to keep the CSS selectors honest.
     TaskItem.configure({ nested: true, HTMLAttributes: { "data-type": "taskItem" } }),
+    NoteImage,
     Markdown,
     Placeholder.configure({
       showOnlyCurrent: false,
@@ -111,6 +159,17 @@ const editor = new Editor({
   content: "",
   contentType: "markdown",
   autofocus: false,
+  editorProps: {
+    handlePaste: (_view, event) => insertImages(imageFiles(event.clipboardData?.files)),
+    handleDrop: (view, event, _slice, moved) => {
+      // `moved` is a node dragged within the editor, which ProseMirror handles itself.
+      if (moved) return false;
+      const files = imageFiles(event.dataTransfer?.files);
+      const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+      if (files.length > 0 && at) editor.commands.setTextSelection(at.pos);
+      return insertImages(files);
+    },
+  },
   onUpdate: () => {
     dirty = true;
     scheduleSave();
@@ -141,7 +200,8 @@ function isBlank(markdown: string): boolean {
   return markdown.replace(/^[#\s]+/, "").trim() === "";
 }
 
-function setNote(note: Note): void {
+function setNote(note: Note, cycling = false): void {
+  if (!current || current.id !== note.id) recentNotes.opened(note.id, cycling);
   current = note;
   dirty = false;
   lastSaved = note.content;
@@ -191,6 +251,8 @@ function flushSave(): Promise<void> {
       // Read the id here, not when queued: a draft's first save (still in the chain) assigns it,
       // and the next save must update that file rather than create a second one.
       const saved = await invoke<Note>("save_note", { id: note.id, content: md });
+      if (note.id && saved.id) recentNotes.rename(note.id, saved.id);
+      else if (current === note) recentNotes.opened(saved.id);
       note.id = saved.id;
       note.title = saved.title;
       note.modified = saved.modified;
@@ -223,11 +285,11 @@ async function leave(): Promise<void> {
   }
 }
 
-async function load(id: string): Promise<void> {
+async function load(id: string, cycling = false): Promise<void> {
   if (current && current.id === id) return flushSave();
   await leave();
   try {
-    setNote(await invoke<Note>("get_note", { id }));
+    setNote(await invoke<Note>("get_note", { id }), cycling);
   } catch (e) {
     console.error(e);
     if (!current) setDraft();
@@ -285,6 +347,17 @@ async function step(direction: 1 | -1): Promise<void> {
   // From a draft (not in the list), step to the newest or the oldest note.
   const next = i < 0 ? list[direction === 1 ? 0 : list.length - 1] : list[(i + direction + list.length) % list.length];
   if (next.id !== current.id) await load(next.id);
+}
+
+function cycleRecent(): void {
+  const pressedAt = performance.now();
+  // Preserve rapid presses while the preceding switch is saving/loading a note.
+  cycleChain = cycleChain.then(async () => {
+    await flushSave();
+    const list = await invoke<NoteMeta[]>("list_notes");
+    const id = recentNotes.next(current?.id ?? null, list.map((note) => note.id), pressedAt);
+    if (id) await load(id, true);
+  }).catch((e) => reportError(`Switch failed: ${String(e)}`));
 }
 
 // ---------- block commands ----------
@@ -430,6 +503,7 @@ const ACTIONS: Record<string, () => void> = {
   move_down: () => moveBlock(1),
   prev: () => void step(-1),
   next: () => void step(1),
+  cycle_recent: cycleRecent,
 };
 
 window.addEventListener(
@@ -457,6 +531,7 @@ void win.listen("new-note", () => void newNote());
 // Undo from the delete toast: the note is back on disk, show it again.
 void win.listen<{ id: string }>("note-restored", (e) => void load(e.payload.id));
 void listen<{ from: string; to: string }>("note-renamed", (e) => {
+  recentNotes.rename(e.payload.from, e.payload.to);
   if (current && current.id === e.payload.from) current.id = e.payload.to;
 });
 void listen<{ id: string }>("notes-changed", async (e) => {

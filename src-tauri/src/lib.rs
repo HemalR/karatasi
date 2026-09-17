@@ -5,14 +5,15 @@ use std::{
     fs,
     io::{Read, Write},
     os::unix::net::{UnixListener, UnixStream},
-    path::PathBuf,
+    path::{Component, Path, PathBuf},
     sync::Mutex,
     time::Duration,
 };
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use percent_encoding::percent_decode_str;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{http, AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 use store::{Hit, Note, NoteMeta, Store};
 use theme::Theme;
@@ -153,6 +154,50 @@ fn undo_toast(title: &str) -> bool {
 #[tauri::command]
 fn search_notes(state: State<AppState>, query: String, limit: Option<usize>) -> Vec<Hit> {
     state.store.lock().unwrap().search(&query, limit.unwrap_or(40))
+}
+
+/// A pasted image: the bytes come as the raw request body, the note's title (percent-encoded,
+/// headers being ASCII) and the file extension as headers. Returns the path to link to.
+#[tauri::command]
+fn save_attachment(state: State<AppState>, request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected raw bytes".to_string());
+    };
+    let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok()).unwrap_or("");
+    let title = percent_decode_str(header("x-title")).decode_utf8_lossy();
+    state.store.lock().unwrap().attach(&title, header("x-ext"), bytes)
+}
+
+/// `note-asset://localhost/assets/x.png` serves that file from the notes dir. A note links its
+/// images relative to itself, which the webview (served from its own origin) could not load
+/// otherwise; the editor swaps in this scheme when rendering (see `NoteImage` in main.ts).
+fn serve_asset(app: &AppHandle, request: &http::Request<Vec<u8>>) -> http::Response<Vec<u8>> {
+    let rel = percent_decode_str(request.uri().path().trim_start_matches('/')).decode_utf8_lossy();
+    let rel = Path::new(rel.as_ref());
+    // Plain names below the notes dir only: no absolute paths, no `..`.
+    let safe = rel.components().all(|c| matches!(c, Component::Normal(_)));
+    let dir = app.state::<AppState>().store.lock().unwrap().dir.clone();
+    let data = if safe { fs::read(dir.join(rel)).ok() } else { None };
+    match data {
+        Some(data) => http::Response::builder()
+            .header(http::header::CONTENT_TYPE, mime_of(rel))
+            .body(data)
+            .unwrap(),
+        None => http::Response::builder().status(http::StatusCode::NOT_FOUND).body(Vec::new()).unwrap(),
+    }
+}
+
+fn mime_of(path: &Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        Some("bmp") => "image/bmp",
+        Some("avif") => "image/avif",
+        _ => "application/octet-stream",
+    }
 }
 
 /// Debug aid: with KARATASI_DEBUG=1 in the environment, dump text to $XDG_RUNTIME_DIR/karatasi-debug-<name>.txt.
@@ -644,6 +689,7 @@ pub fn run() {
             delete_note,
             discard_note,
             search_notes,
+            save_attachment,
             get_theme,
             debug_dump,
             get_notes_dir,
@@ -658,6 +704,7 @@ pub fn run() {
             open_new_note_window,
             frontend_ready
         ])
+        .register_uri_scheme_protocol("note-asset", |ctx, request| serve_asset(ctx.app_handle(), &request))
         .run(tauri::generate_context!())
         .expect("error while running karatasi");
 }

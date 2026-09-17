@@ -43,6 +43,9 @@ pub struct Store {
     notes: HashMap<String, Note>,
 }
 
+/// Subfolder of the notes dir that pasted images go in.
+pub const ASSETS_DIR: &str = "assets";
+
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -76,7 +79,8 @@ pub fn is_blank(content: &str) -> bool {
 }
 
 fn preview_of(content: &str) -> String {
-    let mut lines = content.lines().map(str::trim).filter(|l| !l.is_empty());
+    // Skip image lines: `![](assets/x.png)` says nothing about the note.
+    let mut lines = content.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("!["));
     lines.next(); // title line
     let body = lines
         .next()
@@ -130,6 +134,27 @@ impl Store {
 
     pub fn path_of(&self, id: &str) -> PathBuf {
         self.dir.join(format!("{id}.md"))
+    }
+
+    /// Save a pasted image as `assets/<title slug>-<unix seconds>.<ext>` and return that path,
+    /// relative to the notes dir, for the note's markdown to link to. One flat folder rather than
+    /// one per note: a note is renamed whenever its title changes, and its links must not break.
+    /// Nothing in there is a note (`is_note_path` wants `.md` directly in the dir) and the file
+    /// watcher does not descend, so the folder is invisible to the index and to search.
+    pub fn attach(&self, title: &str, ext: &str, bytes: &[u8]) -> Result<String, String> {
+        if ext.is_empty() || !ext.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Err(format!("bad extension {ext:?}"));
+        }
+        let dir = self.dir.join(ASSETS_DIR);
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let base = format!("{}-{}", slug(title), now_ms() / 1000);
+        let name = std::iter::once(base.clone())
+            .chain((2..).map(|n| format!("{base}-{n}")))
+            .map(|stem| format!("{stem}.{ext}"))
+            .find(|name| !dir.join(name).exists())
+            .unwrap();
+        fs::write(dir.join(&name), bytes).map_err(|e| e.to_string())?;
+        Ok(format!("{ASSETS_DIR}/{name}"))
     }
 
     fn is_note_path(&self, path: &Path) -> bool {
@@ -370,4 +395,25 @@ fn snippet_for(content: &str, term: &str) -> String {
         s.push('…');
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attach_writes_under_assets_and_never_overwrites() {
+        let dir = std::env::temp_dir().join(format!("karatasi-test-{}", std::process::id()));
+        let store = Store::open(dir.clone());
+        let first = store.attach("Grocery list", "png", b"one").unwrap();
+        let second = store.attach("Grocery list", "png", b"two").unwrap();
+        assert!(first.starts_with("assets/grocery-list-"), "{first}");
+        assert!(first.ends_with(".png"));
+        assert_ne!(first, second);
+        assert_eq!(fs::read(dir.join(&first)).unwrap(), b"one");
+        assert_eq!(fs::read(dir.join(&second)).unwrap(), b"two");
+        assert!(store.attach("x", "../png", b"").is_err());
+        assert!(store.list().is_empty(), "attachments are not notes");
+        let _ = fs::remove_dir_all(dir);
+    }
 }

@@ -54,6 +54,7 @@ with `dofile` (the binary has to be on Hyprland's `PATH`, or edit the paths in a
 | Editor   | Ctrl Shift K            | Delete the line or list item                  |
 | Editor   | Ctrl ↑ / Ctrl ↓         | Move the line or list item up / down          |
 | Editor   | Ctrl [ / Ctrl ]         | Previous / next note                          |
+| Editor   | Ctrl Tab               | Cycle recently opened notes                   |
 | Editor   | Ctrl Shift Backspace    | Delete the note (system trash; toast to undo) |
 | Editor   | Esc                     | Hide (main window) or close (any other)       |
 | Search   | ↑ ↓ / Ctrl J Ctrl K     | Move selection                                |
@@ -62,9 +63,20 @@ with `dofile` (the binary has to be on Hyprland's `PATH`, or edit the paths in a
 
 All editor and search keys can be changed in the config file (see Configuration).
 
+Ctrl Tab follows the order notes were last opened in this window, rather than when their files
+were modified. Press it again within one second to continue through older notes. After a pause
+of one second or more, it switches back to the note you just left—so presses two seconds apart
+toggle the same two notes. This history lasts until the window is closed; only notes opened in
+that window are included.
+
 Markdown shortcuts while typing: `- ` bullet, `1. ` numbered, `[] ` todo, `# ` heading, `---`
 divider, `**bold**`, `` `code` ``. Ctrl B / Ctrl I / Ctrl Shift 8 / Ctrl Shift 7 / Ctrl Alt 1..3
 also work. The first line is always the title, and the file is named after it.
+
+Paste or drop an image and it is saved to `assets/` inside the notes folder, named after the note
+(`assets/grocery-list-1758112321.png`), and linked from the note as `![](assets/...)`. That is a
+plain relative markdown link, so any other markdown viewer shows the image too. Deleting a note
+leaves its images behind.
 
 ## Windows and tiling
 
@@ -109,6 +121,7 @@ move_up = "Ctrl+Up"
 move_down = "Ctrl+Down"
 prev = "Ctrl+["
 next = "Ctrl+]"
+cycle_recent = "Ctrl+Tab"
 delete = "Ctrl+Shift+Backspace"
 hide = "Escape"
 switcher_down = ["Down", "Ctrl+J", "Ctrl+N"]

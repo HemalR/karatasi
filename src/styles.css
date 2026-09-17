@@ -238,6 +238,17 @@ body[data-page="editor"] #editor {
   margin: 1.4em 0;
 }
 
+.tiptap img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.6em 0;
+  border-radius: 6px;
+}
+.tiptap img.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+}
+
 .tiptap blockquote {
   margin: 0.6em 0;
   padding-left: 0.9em;
