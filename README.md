@@ -56,9 +56,10 @@ with `dofile` (the binary has to be on Hyprland's `PATH`, or edit the paths in a
 | Editor   | Ctrl [ / Ctrl ]         | Previous / next note                          |
 | Editor   | Ctrl Tab               | Cycle recently opened notes                   |
 | Editor   | Ctrl Shift Backspace    | Delete the note (system trash; toast to undo) |
+| Editor   | Shift Insert            | Paste from the clipboard (see Images)         |
 | Editor   | Esc                     | Hide (main window) or close (any other)       |
 | Search   | ↑ ↓ / Ctrl J Ctrl K     | Move selection                                |
-| Search   | Enter / Shift Enter     | Open in the main window / in a new window     |
+| Search   | Enter / Shift Enter     | Open in this window / in a new window          |
 | Search   | Ctrl Enter              | Create a note titled with the query           |
 
 All editor and search keys can be changed in the config file (see Configuration).
@@ -73,10 +74,17 @@ Markdown shortcuts while typing: `- ` bullet, `1. ` numbered, `[] ` todo, `# ` h
 divider, `**bold**`, `` `code` ``. Ctrl B / Ctrl I / Ctrl Shift 8 / Ctrl Shift 7 / Ctrl Alt 1..3
 also work. The first line is always the title, and the file is named after it.
 
+### Images
+
 Paste or drop an image and it is saved to `assets/` inside the notes folder, named after the note
 (`assets/grocery-list-1758112321.png`), and linked from the note as `![](assets/...)`. That is a
 plain relative markdown link, so any other markdown viewer shows the image too. Deleting a note
 leaves its images behind.
+
+Omarchy's clipboard manager and emoji picker deliver a pick by copying it and then sending
+Shift Insert with `wtype`, a synthesized keypress the webview does not act on. Karatasi handles
+that chord itself: it reads the clipboard with `wl-paste`, saving an image as above and pasting
+text as Ctrl V would. Bind `paste` to another chord in the config to use it elsewhere.
 
 ## Windows and tiling
 
@@ -116,13 +124,14 @@ new = "Ctrl+N"
 new_window = "Ctrl+Shift+N"
 done = "Ctrl+Enter"
 todo = "Ctrl+Shift+Enter"
-delete_block = "Ctrl+Shift+K"
+delete_block = ["Ctrl+Delete", "Ctrl+Shift+K"]
 move_up = "Ctrl+Up"
 move_down = "Ctrl+Down"
 prev = "Ctrl+["
 next = "Ctrl+]"
 cycle_recent = "Ctrl+Tab"
 delete = "Ctrl+Shift+Backspace"
+paste = "Shift+Insert"
 hide = "Escape"
 switcher_down = ["Down", "Ctrl+J", "Ctrl+N"]
 switcher_up = ["Up", "Ctrl+K", "Ctrl+P"]

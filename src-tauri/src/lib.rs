@@ -28,6 +28,9 @@ pub struct AppState {
     /// window and a fresh floating main (`main-N`) takes over the role.
     main_label: Mutex<String>,
     main_gen: Mutex<u32>,
+    /// Label of the editor window that was focused when the switcher opened. A pick replaces the
+    /// note in that window, tiled or floating; with no such window the pick goes to the main.
+    switcher_origin: Mutex<Option<String>>,
     /// Counter for draft note windows (`note-new-N`), which have no note id to name themselves after.
     note_gen: Mutex<u32>,
     watcher: Mutex<Option<RecommendedWatcher>>,
@@ -156,8 +159,8 @@ fn search_notes(state: State<AppState>, query: String, limit: Option<usize>) -> 
     state.store.lock().unwrap().search(&query, limit.unwrap_or(40))
 }
 
-/// A pasted image: the bytes come as the raw request body, the note's title (percent-encoded,
-/// headers being ASCII) and the file extension as headers. Returns the path to link to.
+/// A pasted or dropped image file: the bytes come as the raw request body, the note's title
+/// (percent-encoded, headers being ASCII) and the mime type as headers. Returns the path to link to.
 #[tauri::command]
 fn save_attachment(state: State<AppState>, request: tauri::ipc::Request<'_>) -> Result<String, String> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
@@ -165,7 +168,41 @@ fn save_attachment(state: State<AppState>, request: tauri::ipc::Request<'_>) -> 
     };
     let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok()).unwrap_or("");
     let title = percent_decode_str(header("x-title")).decode_utf8_lossy();
-    state.store.lock().unwrap().attach(&title, header("x-ext"), bytes)
+    let ext = ext_of(header("x-type")).ok_or_else(|| format!("not an image type: {}", header("x-type")))?;
+    state.store.lock().unwrap().attach(&title, ext, bytes)
+}
+
+/// What is on the system clipboard, read with `wl-paste`. The webview ignores a synthesized paste
+/// keypress, which is how Omarchy's clipboard manager and emoji picker deliver a pick (they copy,
+/// then send Shift+Insert with wtype), so the editor's `paste` chord comes here instead. An image
+/// is saved like a pasted file; text goes back for the editor's own paste pipeline.
+#[derive(Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum Clipboard {
+    Image { path: String },
+    Text { text: String },
+    Empty,
+}
+
+#[tauri::command]
+fn read_clipboard(state: State<AppState>, title: String) -> Result<Clipboard, String> {
+    let types = String::from_utf8_lossy(&wl_paste(&["--list-types"])?).into_owned();
+    if let Some((mime, ext)) = types.lines().find_map(|t| ext_of(t).map(|ext| (t, ext))) {
+        let bytes = wl_paste(&["--type", mime])?;
+        let path = state.store.lock().unwrap().attach(&title, ext, &bytes)?;
+        return Ok(Clipboard::Image { path });
+    }
+    if types.lines().any(|t| t.starts_with("text/")) {
+        let text = String::from_utf8_lossy(&wl_paste(&["--no-newline"])?).into_owned();
+        return Ok(Clipboard::Text { text });
+    }
+    Ok(Clipboard::Empty)
+}
+
+/// An empty clipboard is not an error: `wl-paste` exits 1 with nothing on stdout, which reads as no types.
+fn wl_paste(args: &[&str]) -> Result<Vec<u8>, String> {
+    let out = std::process::Command::new("wl-paste").args(args).output().map_err(|e| format!("wl-paste: {e}"))?;
+    Ok(out.stdout)
 }
 
 /// `note-asset://localhost/assets/x.png` serves that file from the notes dir. A note links its
@@ -187,17 +224,28 @@ fn serve_asset(app: &AppHandle, request: &http::Request<Vec<u8>>) -> http::Respo
     }
 }
 
+/// Image types a note can hold, as (mime type, file extension).
+const IMAGE_TYPES: [(&str, &str); 7] = [
+    ("image/png", "png"),
+    ("image/jpeg", "jpg"),
+    ("image/gif", "gif"),
+    ("image/webp", "webp"),
+    ("image/svg+xml", "svg"),
+    ("image/bmp", "bmp"),
+    ("image/avif", "avif"),
+];
+
+fn ext_of(mime: &str) -> Option<&'static str> {
+    IMAGE_TYPES.iter().find(|(m, _)| *m == mime).map(|(_, ext)| *ext)
+}
+
 fn mime_of(path: &Path) -> &'static str {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("png") => "image/png",
-        Some("jpg" | "jpeg") => "image/jpeg",
-        Some("gif") => "image/gif",
-        Some("webp") => "image/webp",
-        Some("svg") => "image/svg+xml",
-        Some("bmp") => "image/bmp",
-        Some("avif") => "image/avif",
-        _ => "application/octet-stream",
-    }
+    let ext = match path.extension().and_then(|e| e.to_str()) {
+        Some("jpeg") => "jpg",
+        Some(ext) => ext,
+        None => "",
+    };
+    IMAGE_TYPES.iter().find(|(_, e)| *e == ext).map(|(mime, _)| *mime).unwrap_or("application/octet-stream")
 }
 
 /// Debug aid: with KARATASI_DEBUG=1 in the environment, dump text to $XDG_RUNTIME_DIR/karatasi-debug-<name>.txt.
@@ -256,21 +304,39 @@ fn hide_window(window: tauri::WebviewWindow) {
     let _ = window.hide();
 }
 
-/// Open a note in the main editor window (used by the switcher).
+/// The editor window a switcher pick lands in: the one the switcher was opened from, if it is still
+/// around, else the (floating) main. `None` means a fresh main just took the note itself.
+fn switcher_target(app: &AppHandle, note: Option<&str>) -> Option<tauri::WebviewWindow> {
+    let origin = app.state::<AppState>().switcher_origin.lock().unwrap().clone();
+    if let Some(w) = origin.and_then(|label| app.get_webview_window(&label)) {
+        return Some(w);
+    }
+    match floating_main(app, note) {
+        Some((w, false)) => Some(w),
+        _ => None,
+    }
+}
+
+/// Open a note in the editor window the switcher came from (used by the switcher).
 #[tauri::command]
 fn open_in_main(app: AppHandle, id: String) {
-    if let Some((main, false)) = floating_main(&app, Some(&id)) {
-        let _ = main.emit_to(main.label(), "open-note", Changed { id });
-        let _ = main.show();
-        let _ = main.set_focus();
+    if let Some(w) = switcher_target(&app, Some(&id)) {
+        let _ = w.emit_to(w.label(), "open-note", Changed { id });
+        let _ = w.show();
+        let _ = w.set_focus();
     }
     hide_switcher(app);
 }
 
-/// A fresh draft in the main editor window (used by the switcher when there is no title to create with).
+/// A fresh draft in the editor window the switcher came from (used by the switcher when there is no
+/// title to create with).
 #[tauri::command]
 fn new_in_main(app: AppHandle) {
-    handle_action(&app, "new");
+    if let Some(w) = switcher_target(&app, None) {
+        let _ = w.emit_to(w.label(), "new-note", ());
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
     hide_switcher(app);
 }
 
@@ -378,6 +444,13 @@ fn urlencode(s: &str) -> String {
 // ---------- window actions ----------
 
 fn open_switcher(app: &AppHandle) {
+    // Remember which editor window the switcher was called up from, so a pick replaces its note.
+    let origin = app
+        .webview_windows()
+        .into_values()
+        .find(|w| w.label() != "switcher" && w.is_focused().unwrap_or(false))
+        .map(|w| w.label().to_string());
+    *app.state::<AppState>().switcher_origin.lock().unwrap() = origin;
     if let Some(w) = app.get_webview_window("switcher") {
         let _ = w.center();
         let _ = w.show();
@@ -665,6 +738,7 @@ pub fn run() {
             initial,
             main_ready: Mutex::new(false),
             switcher_ready: Mutex::new(false),
+            switcher_origin: Mutex::new(None),
             main_label: Mutex::new("main".to_string()),
             main_gen: Mutex::new(0),
             note_gen: Mutex::new(0),
@@ -690,6 +764,7 @@ pub fn run() {
             discard_note,
             search_notes,
             save_attachment,
+            read_clipboard,
             get_theme,
             debug_dump,
             get_notes_dir,

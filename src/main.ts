@@ -43,13 +43,14 @@ const DEFAULT_KEYS: Record<string, string[]> = {
   new_window: ["Ctrl+Shift+N"],
   done: ["Ctrl+Enter"],
   todo: ["Ctrl+Shift+Enter"],
-  delete_block: ["Ctrl+Shift+K"],
+  delete_block: ["Ctrl+Delete", "Ctrl+Shift+K"],
   move_up: ["Ctrl+Up"],
   move_down: ["Ctrl+Down"],
   prev: ["Ctrl+["],
   next: ["Ctrl+]"],
   cycle_recent: ["Ctrl+Tab"],
   delete: ["Ctrl+Shift+Backspace"],
+  paste: ["Shift+Insert"],
   hide: ["Escape"],
 };
 let keys = new Keymap(DEFAULT_KEYS);
@@ -98,19 +99,21 @@ const NoteImage = Image.extend({
   },
 });
 
-// Pasted or dropped image files are saved into the notes folder and linked from the note.
-const IMAGE_EXT: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/gif": "gif",
-  "image/webp": "webp",
-  "image/svg+xml": "svg",
-  "image/bmp": "bmp",
-  "image/avif": "avif",
-};
+// ---------- images ----------
+
+// Pasted or dropped image files are saved into the notes folder (named after the title as typed,
+// so a draft's first image is named before its file exists) and linked from the note.
 
 function imageFiles(files: FileList | undefined): File[] {
-  return [...(files ?? [])].filter((f) => f.type in IMAGE_EXT);
+  return [...(files ?? [])].filter((f) => f.type.startsWith("image/"));
+}
+
+function currentTitle(): string {
+  return editor.state.doc.firstChild?.textContent ?? "";
+}
+
+function insertImage(src: string): void {
+  editor.chain().focus().insertContent({ type: "image", attrs: { src } }).run();
 }
 
 // Returns whether the event was handled, as ProseMirror's paste and drop hooks expect.
@@ -118,15 +121,24 @@ function insertImages(files: File[]): boolean {
   if (files.length === 0) return false;
   void (async () => {
     for (const file of files) {
-      // The title as typed, so a draft's first image is named after it before its file exists.
-      const title = editor.state.doc.firstChild?.textContent ?? "";
       const src = await invoke<string>("save_attachment", new Uint8Array(await file.arrayBuffer()), {
-        headers: { "x-title": encodeURIComponent(title), "x-ext": IMAGE_EXT[file.type] },
+        headers: { "x-title": encodeURIComponent(currentTitle()), "x-type": file.type },
       });
-      editor.chain().focus().insertContent({ type: "image", attrs: { src } }).run();
+      insertImage(src);
     }
   })().catch((e) => reportError(`Image failed: ${String(e)}`));
   return true;
+}
+
+// Shift+Insert. The webview ignores a synthesized paste keypress, and that is how Omarchy's
+// clipboard manager and emoji picker deliver a pick (copy, then Shift+Insert via wtype), so the
+// backend reads the clipboard itself with wl-paste. Text still goes through ProseMirror's paste
+// pipeline, so it lands exactly as a Ctrl V would.
+type Clipboard = { kind: "image"; path: string } | { kind: "text"; text: string } | { kind: "empty" };
+async function pasteFromClipboard(): Promise<void> {
+  const clip = await invoke<Clipboard>("read_clipboard", { title: currentTitle() });
+  if (clip.kind === "image") insertImage(clip.path);
+  else if (clip.kind === "text") editor.view.pasteText(clip.text);
 }
 
 const editor = new Editor({
@@ -504,6 +516,7 @@ const ACTIONS: Record<string, () => void> = {
   prev: () => void step(-1),
   next: () => void step(1),
   cycle_recent: cycleRecent,
+  paste: () => void pasteFromClipboard(),
 };
 
 window.addEventListener(
