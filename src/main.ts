@@ -49,7 +49,7 @@ const DEFAULT_KEYS: Record<string, string[]> = {
   prev: ["Ctrl+["],
   next: ["Ctrl+]"],
   cycle_recent: ["Ctrl+Tab"],
-  delete: ["Ctrl+Shift+Backspace"],
+  delete: ["Ctrl+X"],
   paste: ["Shift+Insert"],
   hide: ["Escape"],
 };

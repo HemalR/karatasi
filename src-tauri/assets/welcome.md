@@ -13,7 +13,7 @@ Floating notes for Omarchy. Karatasi is Swahili for paper: somewhere to jot thin
 - **Ctrl Shift K** delete the line or list item
 - **Ctrl ↑** and **Ctrl ↓** move the line or list item up and down
 - **Ctrl \[** and **Ctrl \]** previous and next note
-- **Ctrl Shift Backspace** delete the note (it goes to the system trash; click the toast to undo)
+- **Ctrl X** delete the note (it goes to the system trash; click the toast to undo)
 - **Esc** or **Super W** hide the window
 - **Super T** tile the window, **Super T** again to float it
 

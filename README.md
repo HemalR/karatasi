@@ -55,7 +55,7 @@ with `dofile` (the binary has to be on Hyprland's `PATH`, or edit the paths in a
 | Editor   | Ctrl ↑ / Ctrl ↓         | Move the line or list item up / down          |
 | Editor   | Ctrl [ / Ctrl ]         | Previous / next note                          |
 | Editor   | Ctrl Tab               | Cycle recently opened notes                   |
-| Editor   | Ctrl Shift Backspace    | Delete the note (system trash; toast to undo) |
+| Editor   | Ctrl X                  | Delete the note (system trash; toast to undo) |
 | Editor   | Shift Insert            | Paste from the clipboard (see Images)         |
 | Editor   | Esc                     | Hide (main window) or close (any other)       |
 | Search   | ↑ ↓ / Ctrl J Ctrl K     | Move selection                                |
@@ -130,7 +130,7 @@ move_down = "Ctrl+Down"
 prev = "Ctrl+["
 next = "Ctrl+]"
 cycle_recent = "Ctrl+Tab"
-delete = "Ctrl+Shift+Backspace"
+delete = "Ctrl+X"
 paste = "Shift+Insert"
 hide = "Escape"
 switcher_down = ["Down", "Ctrl+J", "Ctrl+N"]
@@ -143,9 +143,8 @@ switcher_close = "Escape"
 
 The toggle and close keys are Hyprland bindings and live in the Lua snippet above instead; the
 formatting chords (Ctrl B, Ctrl I, ...) come from the editor and are fixed. Mind Omarchy's own
-bindings when choosing chords: on an Apple keyboard Cmd is Super, and Omarchy grabs Super Shift
-Backspace (toggle gaps) before Karatasi sees it, so press delete with the Control key or pick a
-chord such as `"Ctrl+D"` that is free under both modifiers.
+bindings when choosing chords: on an Apple keyboard Cmd is Super, and any chord Omarchy binds
+itself (Super Shift Backspace toggles gaps, for example) is taken before Karatasi sees it.
 
 A new note (Ctrl N, Ctrl Shift N, or the switcher with nothing typed) is a draft that lives only in
 the editor; its file appears with the first keystroke, named after the title. A note you leave
