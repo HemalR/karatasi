@@ -1,13 +1,14 @@
-import { Editor, mergeAttributes } from "@tiptap/core";
+import { Editor, mergeAttributes, type JSONContent } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Document from "@tiptap/extension-document";
 import Image from "@tiptap/extension-image";
 import { Markdown } from "@tiptap/markdown";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Placeholder } from "@tiptap/extensions";
+import { renderTableToMarkdown, Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import Strike from "@tiptap/extension-strike";
 import { TextSelection } from "@tiptap/pm/state";
-import type { Node as PMNode } from "@tiptap/pm/model";
+import { Fragment, Slice, type Node as PMNode } from "@tiptap/pm/model";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -130,6 +131,34 @@ function insertImages(files: File[]): boolean {
   return true;
 }
 
+// Plain-text pastes (terminals, chat replies, Shift+Insert) are read as markdown, so a pasted table
+// or list arrives formatted. ProseMirror skips this inside code blocks and for HTML pastes.
+function parseMarkdownPaste(text: string): Slice {
+  const doc = editor.markdown!.parse(text);
+  const fragment = Fragment.fromJSON(editor.schema, (doc.content ?? []).flatMap(splitLines));
+  // Open the edges so a one-line paste joins the current paragraph, but never into a table.
+  return Slice.maxOpen(fragment, false);
+}
+
+// Markdown folds consecutive lines into one paragraph; split it back into one paragraph per line,
+// as a plain paste would, since lines are the unit for done, move and delete.
+function splitLines(node: JSONContent): JSONContent[] {
+  if (node.type !== "paragraph") return [node.content ? { ...node, content: node.content.flatMap(splitLines) } : node];
+  let line: JSONContent[] = [];
+  const lines = [line];
+  for (const child of node.content ?? []) {
+    if (child.type !== "text") {
+      line.push(child);
+      continue;
+    }
+    child.text!.split("\n").forEach((text, i) => {
+      if (i > 0) lines.push((line = []));
+      if (text) line.push({ ...child, text });
+    });
+  }
+  return lines.map((content) => ({ ...node, content }));
+}
+
 // Shift+Insert. The webview ignores a synthesized paste keypress, and that is how Omarchy's
 // clipboard manager and emoji picker deliver a pick (copy, then Shift+Insert via wtype), so the
 // backend reads the clipboard itself with wl-paste. Text still goes through ProseMirror's paste
@@ -159,6 +188,12 @@ const editor = new Editor({
     // The node view omits data-type, so add it ourselves to keep the CSS selectors honest.
     TaskItem.configure({ nested: true, HTMLAttributes: { "data-type": "taskItem" } }),
     NoteImage,
+    // A markdown table cell is one line, so a cell holds exactly one paragraph and saves losslessly.
+    // The stock renderer pads the table with newlines, leaving extra blank lines around it in the file.
+    Table.extend({ renderMarkdown: (node, h) => renderTableToMarkdown(node, h).trim() }),
+    TableRow,
+    TableHeader.extend({ content: "paragraph" }),
+    TableCell.extend({ content: "paragraph" }),
     Markdown,
     Placeholder.configure({
       showOnlyCurrent: false,
@@ -172,6 +207,7 @@ const editor = new Editor({
   contentType: "markdown",
   autofocus: false,
   editorProps: {
+    clipboardTextParser: parseMarkdownPaste,
     handlePaste: (_view, event) => insertImages(imageFiles(event.clipboardData?.files)),
     handleDrop: (view, event, _slice, moved) => {
       // `moved` is a node dragged within the editor, which ProseMirror handles itself.

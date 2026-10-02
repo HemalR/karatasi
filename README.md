@@ -74,6 +74,10 @@ Markdown shortcuts while typing: `- ` bullet, `1. ` numbered, `[] ` todo, `# ` h
 divider, `**bold**`, `` `code` ``. Ctrl B / Ctrl I / Ctrl Shift 8 / Ctrl Shift 7 / Ctrl Alt 1..3
 also work. The first line is always the title, and the file is named after it.
 
+Pasted plain text is read as markdown, so a table, list or `**bold**` copied from a terminal or a
+chat reply arrives formatted. Tables save as pipe tables; Tab and Shift Tab move between cells, and
+Tab in the last cell adds a row.
+
 ### Images
 
 Paste or drop an image and it is saved to `assets/` inside the notes folder, named after the note

@@ -277,6 +277,37 @@ body[data-page="editor"] #editor {
   padding: 0;
 }
 
+/* The table extension wraps each table in .tableWrapper; a table too wide for the column scrolls
+   sideways instead of stretching the page. */
+.tiptap .tableWrapper {
+  overflow-x: auto;
+  margin: 0.6em 0;
+}
+.tiptap table {
+  border-collapse: collapse;
+  line-height: 1.45;
+}
+.tiptap th,
+.tiptap td {
+  border: 1px solid var(--muted);
+  padding: 0.35em 0.7em;
+  text-align: left;
+  vertical-align: top;
+}
+.tiptap th {
+  color: var(--fg-bright);
+  font-weight: 600;
+  background: var(--bg-light);
+}
+.tiptap td > p,
+.tiptap th > p {
+  margin: 0;
+}
+/* Cells picked by dragging across them. */
+.tiptap .selectedCell {
+  background: var(--selection);
+}
+
 .tiptap a {
   color: var(--accent);
   text-decoration: none;
